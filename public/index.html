@@ -91,6 +91,9 @@
   thead th.day.mstart, tbody td.day.mstart { border-left: 2px solid #c7d2fe; }
   thead th.day { cursor: default; }
   thead th.day .mtag { font-size: 9px; color: var(--blue); font-weight: 700; line-height: 1; }
+  tr.emprow.dragging { opacity: .45; }
+  tr.emprow.dragover td.name { box-shadow: inset 0 3px 0 var(--blue), 2px 0 3px rgba(0,0,0,.04); }
+  td.name .grip { cursor: grab; color: var(--muted); }
 
   tr.dept td {
     position: sticky; left: 0; z-index: 12;
@@ -163,6 +166,9 @@ let curMonth = Number(params.get('month')) || (new Date().getMonth() + 1);
 // 編輯狀態
 let leaveTypes = [];
 let EMP = {};              // empId -> { name, leaves }
+let EMP_DEPT = {};         // empId -> 部門索引（拖曳限同部門）
+let DEPT_MEMBERS = {};     // 部門索引 -> [empId 順序]
+let dragEmp = null;
 let HOLIDAYS = new Set();
 let selType = '';          // 選的假別 id
 let rangeMode = false, rangeEmp = null, rangeStart = null;
@@ -295,17 +301,19 @@ function render(data){
 
   // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
   HOLIDAYS = holidays;
-  EMP = {};
+  EMP = {}; EMP_DEPT = {}; DEPT_MEMBERS = {};
   const colCount = days.length + 1;
   const depts = data.departments || [];
   let anyMember = false;
-  depts.forEach(dept=>{
+  depts.forEach((dept, di)=>{
     html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
+    DEPT_MEMBERS[di] = [];
     (dept.members || []).forEach(m=>{
       anyMember = true;
-      if (m.id) EMP[m.id] = { name: m.name, leaves: m.leaves || {} };
+      if (m.id){ EMP[m.id] = { name: m.name, leaves: m.leaves || {} }; EMP_DEPT[m.id] = di; DEPT_MEMBERS[di].push(m.id); }
       const empAttr = m.id ? ` data-emp="${m.id}"` : '';
-      html += `<tr><td class="name"><div class="n">${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
+      const rowAttr = m.id ? ` class="emprow" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
+      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⠿</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
       days.forEach(day=>{
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
@@ -322,6 +330,7 @@ function render(data){
   });
   html += '</tbody>';
   table.innerHTML = html;
+  attachDrag();
 
   const status = document.getElementById('status');
   if (!anyMember){
@@ -355,6 +364,29 @@ async function initEditing(){
   table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
 }
 
+// 拖曳排序員工（限同部門）：放開後依新順序重設 sort_order。
+function attachDrag(){
+  document.querySelectorAll('tr.emprow').forEach(tr=>{
+    tr.ondragstart = (e)=>{ dragEmp = tr.dataset.emp; tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
+    tr.ondragend = ()=>{ tr.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x=>x.classList.remove('dragover')); };
+    tr.ondragover = (e)=>{ if (dragEmp && tr.dataset.dept === EMP_DEPT[dragEmp]+'' ){ e.preventDefault(); tr.classList.add('dragover'); } };
+    tr.ondragleave = ()=>tr.classList.remove('dragover');
+    tr.ondrop = (e)=>{ e.preventDefault(); tr.classList.remove('dragover'); const target = tr.dataset.emp; const dragged = dragEmp; dragEmp = null; if (dragged && target && dragged !== target) reorderEmp(dragged, target); };
+  });
+}
+async function reorderEmp(draggedId, targetId){
+  const dk = EMP_DEPT[draggedId];
+  if (dk == null || dk !== EMP_DEPT[targetId]) { alert('只能在同一部門內調整順序'); return; }
+  const arr = (DEPT_MEMBERS[dk] || []).slice();
+  const from = arr.indexOf(draggedId); if (from < 0) return;
+  arr.splice(from, 1);
+  const to = arr.indexOf(targetId);
+  arr.splice(to < 0 ? arr.length : to, 0, draggedId);
+  for (let i = 0; i < arr.length; i += 10){
+    await Promise.all(arr.slice(i, i+10).map((id, j)=> App.adminApi(`/api/admin/employees/${id}`, { method:'PUT', body: JSON.stringify({ sort_order: (i + j + 1) * 10 }) })));
+  }
+  load();
+}
 function periodToSlot(p){ return p === 'morning' ? 'am' : p === 'afternoon' ? 'pm' : 'full'; }
 function onCell(empId, date){
   const emp = EMP[empId]; if (!emp) return;
