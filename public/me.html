@@ -179,8 +179,19 @@ function showCalendar(){
     if (!date.startsWith(monthPrefix)) continue;
     for (const lv of Object.values(slots)) sumByType[lv.leave_type_id] = (sumByType[lv.leave_type_id]||0) + leaveDays(lv.period);
   }
+  // 年度累計（同 Excel 公式：休=1 天、午休/早休=0.5 天，其他假別不計）
+  let yearTot = 0;
+  for (const slots of Object.values(myLeaves)){
+    for (const [slot, lv] of Object.entries(slots)){
+      const lab = labelOf(lv.leave_type_id);
+      if (lab === '休') yearTot += slot === 'full' ? 1 : 0.5;
+      else if (/午休|早休/.test(lab)) yearTot += 0.5;
+    }
+  }
+
   const summary = Object.entries(sumByType).map(([tid,days])=>
-    `<span class="sumitem"><span class="dot" style="background:${colorOf(tid)}"></span>${labelOf(tid)} ${days} 天</span>`).join('');
+    `<span class="sumitem"><span class="dot" style="background:${colorOf(tid)}"></span>${labelOf(tid)} ${days} 天</span>`).join('')
+    + `<span class="sumitem"><b>${y} 年累計休假 ${yearTot} 天</b></span>`;
 
   // 假別圖例
   const legend = leaveTypes.map(t=>`<span class="sumitem"><span class="dot" style="background:${t.color||'#64748b'}"></span>${t.short_name||t.name} = ${t.name}</span>`).join('');
@@ -196,12 +207,13 @@ function showCalendar(){
     const picking = (rangeStart===date) ? ' picking' : '';
     let chip = '', halfCls = '';
     if (slots){
-      if (slots.am && slots.pm){
-        halfCls = ' half';
-        chip = `<div class="chip am" style="background:${colorOf(slots.am.leave_type_id)}">${labelOf(slots.am.leave_type_id)}</div><div class="chip pm" style="background:${colorOf(slots.pm.leave_type_id)}">${labelOf(slots.pm.leave_type_id)}</div>`;
+      if (slots.full){
+        chip = `<div class="chip" style="background:${colorOf(slots.full.leave_type_id)}">${labelOf(slots.full.leave_type_id)}</div>`;
       } else {
-        const lv = slots.full || slots.am || slots.pm;
-        chip = `<div class="chip" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>`;
+        // 半天：早休＝上半、午休＝下半（可並存）
+        halfCls = ' half';
+        if (slots.am) chip += `<div class="chip am" style="background:${colorOf(slots.am.leave_type_id)}">${labelOf(slots.am.leave_type_id)}</div>`;
+        if (slots.pm) chip += `<div class="chip pm" style="background:${colorOf(slots.pm.leave_type_id)}">${labelOf(slots.pm.leave_type_id)}</div>`;
       }
     }
     const holHtml = hol ? `<div class="hol" title="${hol}">${hol}</div>` : '';

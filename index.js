@@ -502,13 +502,24 @@ async function buildCalendar(env, year, month) {
   for (const t of types.results) legend[t.short_name || t.name] = t.color || '#64748b';
 
   // 每人每日可同時有 full / am / pm 三格（AM+PM 可並存），分槽存放。
+  // 同時計算「年度累計休假日」，規則同原 Excel 公式：
+  // COUNTIF(休) + 0.5*(午休+早休+上午休+下午休)；差/病/員旅/健等其他假別不計。
   const leavesByEmp = {};
+  const yearTotals = {};
+  const yearPrefix = String(year) + '-';
   for (const r of recs.results) {
     const t = typeById[r.leave_type_id];
     const slot = r.period === 'morning' ? 'am' : r.period === 'afternoon' ? 'pm' : 'full';
-    const cell = { label: t ? t.short_name || t.name : '休', period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
+    const label = t ? t.short_name || t.name : '休';
+    const cell = { label, period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
     const days = (leavesByEmp[r.employee_id] ||= {});
     (days[r.date] ||= {})[slot] = cell;
+    if (r.date && r.date.startsWith(yearPrefix)) {
+      let w = 0;
+      if (label === '休') w = slot === 'full' ? 1 : 0.5;
+      else if (/午休|早休/.test(label)) w = 0.5;
+      if (w) yearTotals[r.employee_id] = (yearTotals[r.employee_id] || 0) + w;
+    }
   }
 
   const departments = depts.results
@@ -528,6 +539,7 @@ async function buildCalendar(env, year, month) {
     legend,
     holidays: [...new Set(hols.results.map((h) => h.date).filter(Boolean))],
     departments,
+    year_totals: yearTotals,
   };
 }
 
