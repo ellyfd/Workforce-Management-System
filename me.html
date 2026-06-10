@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>我的排休</title>
+<style>
+  :root{ --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; --weekend:#fef2f2; --blue:#2563eb; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif; color:#1f2937; background:var(--bg); }
+  .page{ max-width:560px; margin:0 auto; padding:14px; }
+  h1{ font-size:20px; margin:0 0 2px; }
+  .muted{ color:var(--muted); font-size:13px; }
+  .card{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:12px; }
+  .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  button{ font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--border); background:#fff; padding:7px 12px; }
+  button.primary{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  select,input[type=text]{ font:inherit; padding:8px 10px; border:1px solid var(--border); border-radius:8px; width:100%; }
+  .nav{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:10px 0; }
+  .cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .cal .wd{ text-align:center; font-size:12px; color:var(--muted); padding:4px 0; }
+  .cal .wd.we{ color:#ef4444; }
+  .day{ aspect-ratio:1/1; border:1px solid var(--border); border-radius:8px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; background:#fff; position:relative; }
+  .day.we{ background:var(--weekend); }
+  .day.empty{ visibility:hidden; }
+  .day .d{ font-size:12px; color:#374151; align-self:flex-start; }
+  .day .chip{ margin-top:auto; margin-bottom:auto; width:100%; border-radius:6px; color:#fff; font-size:12px; font-weight:600; text-align:center; padding:3px 0; }
+  .list{ display:flex; flex-direction:column; gap:6px; }
+  .emp{ padding:9px 12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; }
+  .emp:hover{ background:#f3f4f6; }
+  .status{ color:var(--muted); padding:18px; text-align:center; }
+  .err{ color:#b91c1c; }
+  .link{ color:var(--blue); cursor:pointer; font-size:13px; background:none; border:none; padding:0; }
+  footer{ color:var(--muted); font-size:11px; margin-top:10px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div id="app"><div class="status">載入中…</div></div>
+  <footer id="footer"></footer>
+</div>
+
+<script>
+// ⚠️ 部署後把下面換成你的 Worker 網址（或開頁時用 ?api=... 覆蓋）。
+const API_BASE = new URLSearchParams(location.search).get('api')
+  || 'https://dev-division-api.YOURSUBDOMAIN.workers.dev';
+
+const WEEKDAY = ['日','一','二','三','四','五','六'];
+
+// 取得（或產生）本裝置識別碼
+let DEVICE = localStorage.getItem('dev_device_token');
+if (!DEVICE) { DEVICE = crypto.randomUUID(); localStorage.setItem('dev_device_token', DEVICE); }
+
+let me = null;
+let leaveTypes = [];
+let cur = new Date(); // 目前顯示的月份
+let myLeaves = {};    // { 'YYYY-MM-DD': {id, leave_type_id} }
+
+const app = document.getElementById('app');
+const api = (path, opts = {}) => fetch(API_BASE + path, {
+  ...opts,
+  headers: { 'Content-Type': 'application/json', 'X-Device-Token': DEVICE, ...(opts.headers || {}) },
+});
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function ymd(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
+function colorOf(typeId){ const t = leaveTypes.find(x=>x.id===typeId); return t ? (t.color||'#64748b') : '#64748b'; }
+function labelOf(typeId){ const t = leaveTypes.find(x=>x.id===typeId); return t ? (t.short_name||t.name) : '休'; }
+
+async function init(){
+  try {
+    const res = await api('/api/me');
+    if (res.status === 401) return showLogin();
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    me = await res.json();
+    leaveTypes = await (await api('/api/leave-types')).json();
+    await loadMyLeaves();
+    showCalendar();
+  } catch (e) {
+    app.innerHTML = `<div class="status err">連線失敗：${e.message}<br>請確認 API_BASE 設定正確（目前：${API_BASE}）</div>`;
+  }
+}
+
+async function showLogin(){
+  const emps = await (await api('/api/employees')).json();
+  app.innerHTML = `
+    <h1>我的排休</h1>
+    <div class="muted">第一次使用：請選擇你自己（會記住這台裝置，下次免選）。</div>
+    <div class="card">
+      <input id="search" type="text" placeholder="輸入中文名或英文名搜尋…" />
+      <div class="list" id="emplist" style="margin-top:10px;"></div>
+    </div>`;
+  const listEl = document.getElementById('emplist');
+  const draw = (kw='') => {
+    const k = kw.trim().toLowerCase();
+    listEl.innerHTML = '';
+    emps.filter(e => !k || (e.name||'').toLowerCase().includes(k) || (e.english_name||'').toLowerCase().includes(k))
+      .forEach(e => {
+        const el = document.createElement('div');
+        el.className = 'emp';
+        el.innerHTML = `<b>${e.name}</b> ${e.english_name ? `<span class="muted">${e.english_name}</span>` : ''}`;
+        el.onclick = async () => { await bind(e.id); };
+        listEl.appendChild(el);
+      });
+  };
+  draw();
+  document.getElementById('search').oninput = (ev) => draw(ev.target.value);
+}
+
+async function bind(employeeId){
+  const res = await api('/api/bind', { method:'POST', body: JSON.stringify({ employee_id: employeeId }) });
+  if (!res.ok) { alert('綁定失敗'); return; }
+  init();
+}
+
+async function loadMyLeaves(){
+  const recs = await (await api(`/api/my-leaves?year=${cur.getFullYear()}`)).json();
+  myLeaves = {};
+  for (const r of recs) myLeaves[r.date] = { id: r.id, leave_type_id: r.leave_type_id };
+}
+
+function showCalendar(){
+  const y = cur.getFullYear(), m = cur.getMonth() + 1;
+  const first = new Date(y, m-1, 1).getDay();
+  const days = new Date(y, m, 0).getDate();
+
+  const opts = leaveTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  let cells = '';
+  for (let i=0;i<first;i++) cells += `<div class="day empty"></div>`;
+  for (let d=1; d<=days; d++){
+    const date = ymd(y,m,d);
+    const dow = new Date(y, m-1, d).getDay();
+    const we = dow===0 || dow===6;
+    const lv = myLeaves[date];
+    const chip = lv ? `<div class="chip" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>` : '';
+    cells += `<div class="day${we?' we':''}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
+  }
+
+  app.innerHTML = `
+    <div class="row" style="justify-content:space-between;">
+      <div><h1>我的排休</h1><div class="muted">${me.name}${me.english_name?`（${me.english_name}）`:''}</div></div>
+      <button class="link" id="logout">切換身分</button>
+    </div>
+    <div class="card">
+      <div class="row"><span class="muted">假別：</span><div style="flex:1;min-width:160px;"><select id="ltype">${opts}</select></div></div>
+      <div class="nav">
+        <button id="prev">‹ 上個月</button>
+        <b>${y} 年 ${m} 月</b>
+        <button id="next">下個月 ›</button>
+      </div>
+      <div class="cal">
+        ${WEEKDAY.map((w,i)=>`<div class="wd${i===0||i===6?' we':''}">${w}</div>`).join('')}
+        ${cells}
+      </div>
+      <div class="muted" style="margin-top:10px;">點日期＝用上方假別請假；再點一次＝取消。</div>
+    </div>`;
+
+  document.getElementById('logout').onclick = () => { localStorage.removeItem('dev_device_token'); location.reload(); };
+  document.getElementById('prev').onclick = async () => { cur = new Date(y, m-2, 1); await loadMyLeaves(); showCalendar(); };
+  document.getElementById('next').onclick = async () => { cur = new Date(y, m, 1); await loadMyLeaves(); showCalendar(); };
+  app.querySelectorAll('.day[data-date]').forEach(el => {
+    el.onclick = () => toggleDay(el.dataset.date);
+  });
+}
+
+async function toggleDay(date){
+  const lv = myLeaves[date];
+  try {
+    if (lv) {
+      await api(`/api/my-leaves/${lv.id}`, { method:'DELETE' });
+    } else {
+      const leave_type_id = document.getElementById('ltype').value;
+      await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id }) });
+    }
+    await loadMyLeaves();
+    showCalendar();
+  } catch (e) {
+    alert('操作失敗：' + e.message);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
