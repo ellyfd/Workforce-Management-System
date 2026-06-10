@@ -100,32 +100,32 @@ function render(s){
         <div class="sp"></div>
         <span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'?`・${PERIOD[p.period]||''}`:''}</span>
       </div>`).join('')
-    : '<div class="empty">📅<div style="margin-top:8px;">今日無休假人員</div></div>';
+    : '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
 
   const warns = s.warnings || [];
   const warnCard = warns.length ? `
     <div class="card" style="margin-bottom:12px;border-color:#fde68a;">
-      <div class="row" style="justify-content:space-between;margin-bottom:6px;"><b>⚠️ 異常請假</b><span class="muted">${warns.length} 筆</span></div>
+      <div class="row" style="justify-content:space-between;margin-bottom:6px;"><b>異常請假</b><span class="muted">${warns.length} 筆</span></div>
       ${warns.map(w=>`<div class="warn-item"><span class="nm">${esc(w.name)}</span><span class="rs">${w.reasons.map(esc).join('；')}</span></div>`).join('')}
     </div>` : '';
 
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
-      <div class="card kpi"><div class="label">👥 應到人數</div><div class="val">${s.expected}${s.is_non_working?'<span class="nwk">非工作日</span>':''}</div></div>
-      <div class="card kpi"><div class="label">📈 出勤率</div><div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div></div>
-      <div class="card kpi"><div class="label">🗓️ 請假人數</div><div class="val">${s.on_leave_count}</div></div>
-      <div class="card kpi"><div class="label">🏷️ 假別分佈</div>${typeChips}</div>
+      <div class="card kpi"><div class="label">應到人數</div><div class="val">${s.expected}${s.is_non_working?'<span class="nwk">非工作日</span>':''}</div></div>
+      <div class="card kpi"><div class="label">出勤率</div><div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div></div>
+      <div class="card kpi"><div class="label">請假人數</div><div class="val">${s.on_leave_count}</div></div>
+      <div class="card kpi"><div class="label">假別分佈</div>${typeChips}</div>
     </div>
     ${warnCard}
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
         <b>休假人員 <span class="muted">${list.length} 人</span></b>
-        <button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>
+        ${(me&&me.role==='admin')?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
     </div>`;
 
-  document.getElementById('dedupe').onclick = dedupe;
+  const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
 }
 
 async function dedupe(){
