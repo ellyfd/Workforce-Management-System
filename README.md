@@ -12,19 +12,37 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
               ├─ /me          → public/me.html     （我的排休：個人頁）
               ├─ /manage      → public/manage.html （休假管理：改任一員工）
               ├─ /stats       → public/stats.html  （儀表板統計）
-              ├─ /dpc.json    → DPC（3D team）即時資料（靜態檔，見下）
+              ├─ /settings    → public/settings.html（設定管理：DPC 同步）
               └─ /api/*       → index.js（API）
                                   └─→ D1 資料庫 dpc-hub
-
-GitHub Action（每 ~10 分鐘）── Base44 ──→ public/dpc.json ──（push main 自動部署）
+                                        ↑
+   Base44（DPC 真相來源）──→ Worker 同步（Cron 每 30 分鐘 + 手動 /api/sync）──┘
 ```
 
-### 資料來源（兩塊，在網頁裡合併）
+### 資料來源：Base44 → D1（單向同步）
 
-- **D1 資料庫**：開發處自己的部門/員工/休假（特工、估碼…），由本系統的管理頁維護。
-- **Base44 即時 DPC**：`3D team（DPC）`的休假由 GitHub Action 從 Base44 同步成
-  `public/dpc.json`,全部排休頁會自動合併、並以它取代 D1 裡同名的 DPC 部門。
-  （要關掉即時同步、改用 D1 管理 DPC,移除 `.github/workflows/sync-dpc.yml` 即可。）
+- **Base44 是 DPC 的真相來源**。Worker 會把 Base44 的 DPC 部門**單向**同步進 D1:
+  - **定時**:Cron 每 30 分鐘自動跑(`wrangler.toml` 的 `[triggers]`)。
+  - **手動**:設定管理頁(`/settings`)按「立即同步」,或 `POST /api/sync`(帶 `X-Sync-Secret`)。
+- 同步**只動 DPC 部門**的 department/employees/leave_records;`leave_types`、`holidays`
+  為全域參考資料一併更新;**保留每位員工的 `device_token`**(me.html 綁定用)。
+- 前端一律**只讀 D1**(`/api/calendar`)。方向為 Base44 → D1,所以 DPC 同仁在 me.html
+  改的假,下次同步會以 Base44 為準覆蓋。
+- 過渡期:Worker 同步尚未部署時,全部排休頁偵測到 D1 沒有 DPC,會暫時合併
+  `public/dpc.json`(由舊的 `.github/workflows/sync-dpc.yml` 產生)當畫面備援;
+  Worker 同步上線後即自動改用 D1,該 Action 可移除。
+
+### 部署同步所需設定
+
+```sh
+cd <repo>
+npx wrangler secret put BASE44_API_KEY   # 讀 Base44 用（機密）
+npx wrangler secret put SYNC_SECRET       # 手動同步通關密語（機密，自己取）
+npx wrangler deploy                        # 部署，Cron 一併生效
+```
+
+> 非機密設定(Base44 URL / App ID / 部門名)已放在 `wrangler.toml` 的 `[vars]`,可直接改。
+> 部署後開 `/settings` 輸入 `SYNC_SECRET` 按「立即同步」做第一次灌入。
 
 - 靜態資源（`public/`)優先比對:對得上的路徑直接回網頁,對不上的(`/api/*`)才進 `index.js`。
 - 推送到 GitHub `main` 會自動重新部署 Worker。

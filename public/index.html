@@ -115,6 +115,7 @@
     <a class="nav-link" href="me.html">我的排休</a>
     <a class="nav-link" href="stats.html">統計</a>
     <a class="nav-link" href="manage.html">管理</a>
+    <a class="nav-link" href="settings.html">設定</a>
   </header>
 
   <div class="toolbar">
@@ -296,19 +297,23 @@ async function load(){
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
 
-    // DPC（3D team）即時資料為選用：由 Base44 同步到 dpc.json，抓不到就略過。
-    let dpc = null;
-    try {
-      const r2 = await fetch(DPC_URL, { cache: 'no-store' });
-      if (r2.ok) dpc = await r2.json();
-    } catch (_) { /* ignore */ }
-
-    render(mergeDpc(data, dpc));
-
-    if (dpc && dpc.updated_at) {
-      const foot = document.getElementById('footer');
-      const dpcTxt = `DPC 即時同步：${new Date(dpc.updated_at).toLocaleString('zh-TW')}`;
-      foot.textContent = foot.textContent ? `${foot.textContent}　|　${dpcTxt}` : dpcTxt;
+    // D1 已經有 DPC（已由 Worker 從 Base44 同步進來）→ 直接用 D1。
+    // 還沒有（尚未部署/同步）→ 暫時合併靜態 dpc.json 當過渡，讓畫面先有資料。
+    const hasDpcInD1 = (data.departments || []).some((d) => /DPC/i.test(d.name || ''));
+    if (hasDpcInD1) {
+      render(data);
+    } else {
+      let dpc = null;
+      try {
+        const r2 = await fetch(DPC_URL, { cache: 'no-store' });
+        if (r2.ok) dpc = await r2.json();
+      } catch (_) { /* ignore */ }
+      render(mergeDpc(data, dpc));
+      if (dpc && dpc.updated_at) {
+        const foot = document.getElementById('footer');
+        const dpcTxt = `DPC 過渡資料：${new Date(dpc.updated_at).toLocaleString('zh-TW')}`;
+        foot.textContent = foot.textContent ? `${foot.textContent}　|　${dpcTxt}` : dpcTxt;
+      }
     }
   } catch (e) {
     status.className = 'status err';
