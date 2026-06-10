@@ -21,7 +21,7 @@ body{
   background:var(--card); border-right:1px solid var(--border);
   overflow-y:auto; z-index:60; display:flex; flex-direction:column;
 }
-.app-sidebar .brand{ padding:18px 16px 14px; border-bottom:1px solid var(--border); font-size:15px; font-weight:700; letter-spacing:.01em; }
+.app-sidebar .brand{ padding:18px 16px 14px; border-bottom:1px solid var(--border); font-size:15px; font-weight:600; letter-spacing:.01em; }
 .app-nav{ padding:6px 8px; flex:1; }
 .app-nav .nav-sect{ color:var(--muted); font-size:14px; font-weight:600; padding:14px 10px 6px; letter-spacing:.08em; }
 .app-nav .navlink{
@@ -55,13 +55,13 @@ body.has-shell{ padding-left:var(--sidebar-w); }
 
 /* ── 通用元件 ─────────────────────────────────────── */
 .page-head{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-.page-head h1{ font-size:20px; margin:0; font-weight:700; }
+.page-head h1{ font-size:20px; margin:0; font-weight:600; }
 .page-head .sub{ color:var(--muted); font-size:14px; }
 .spacer{ flex:1; }
 .muted{ color:var(--muted); font-size:14px; }
 
 .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; box-shadow:var(--shadow); }
-.card h2{ font-size:15px; margin:0 0 4px; font-weight:700; }
+.card h2{ font-size:15px; margin:0 0 4px; font-weight:600; }
 .cards{ display:grid; gap:12px; }
 
 .btn{ font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--border); background:#fff; padding:8px 14px; color:var(--ink); }
@@ -88,11 +88,11 @@ input[type=color]{ padding:2px; height:38px; width:48px; }
 .tag.green{ background:#dcfce7; color:#15803d; }
 .tag.blue{ background:#dbeafe; color:#1d4ed8; }
 .tag.gray{ background:#f3f4f6; color:#6b7280; }
-.chip{ display:inline-flex; align-items:center; justify-content:center; border-radius:6px; color:#fff; font-size:14px; font-weight:600; padding:2px 8px; }
+.chip{ display:inline-flex; align-items:center; justify-content:center; border-radius:6px; color:#fff; font-size:14px; font-weight:500; padding:2px 8px; white-space:nowrap; }
 
 .kpi-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
 .kpi .label{ display:flex; align-items:center; gap:6px; color:var(--muted); font-size:14px; }
-.kpi .val{ font-size:30px; font-weight:800; margin-top:6px; }
+.kpi .val{ font-size:28px; font-weight:600; margin-top:6px; }
 .kpi .val small{ font-size:14px; font-weight:500; color:var(--muted); margin-left:3px; }
 
 .bar-row{ display:flex; align-items:center; gap:8px; margin:6px 0; font-size:14px; }
@@ -116,7 +116,7 @@ table.data tr:last-child td{ border-bottom:none; }
 /* 簡易彈窗 */
 .modal-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:80; padding:16px; }
 .modal{ background:#fff; border-radius:14px; padding:18px; width:100%; max-width:420px; box-shadow:0 12px 40px rgba(0,0,0,.2); }
-.modal h3{ margin:0 0 12px; font-size:16px; font-weight:700; }
+.modal h3{ margin:0 0 12px; font-size:16px; font-weight:600; }
 .modal .field{ margin-bottom:12px; }
 .modal .actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
 
