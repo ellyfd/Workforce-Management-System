@@ -12,9 +12,19 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
               ├─ /me          → public/me.html     （我的排休：個人頁）
               ├─ /manage      → public/manage.html （休假管理：改任一員工）
               ├─ /stats       → public/stats.html  （儀表板統計）
+              ├─ /dpc.json    → DPC（3D team）即時資料（靜態檔，見下）
               └─ /api/*       → index.js（API）
                                   └─→ D1 資料庫 dpc-hub
+
+GitHub Action（每 ~10 分鐘）── Base44 ──→ public/dpc.json ──（push main 自動部署）
 ```
+
+### 資料來源（兩塊，在網頁裡合併）
+
+- **D1 資料庫**：開發處自己的部門/員工/休假（特工、估碼…），由本系統的管理頁維護。
+- **Base44 即時 DPC**：`3D team（DPC）`的休假由 GitHub Action 從 Base44 同步成
+  `public/dpc.json`,全部排休頁會自動合併、並以它取代 D1 裡同名的 DPC 部門。
+  （要關掉即時同步、改用 D1 管理 DPC,移除 `.github/workflows/sync-dpc.yml` 即可。）
 
 - 靜態資源（`public/`)優先比對:對得上的路徑直接回網頁,對不上的(`/api/*`)才進 `index.js`。
 - 推送到 GitHub `main` 會自動重新部署 Worker。
@@ -26,6 +36,8 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
 - `public/me.html`：我的排休（個人請假/改假,讀寫 `/api/my-leaves` 等）。
 - `public/manage.html`：休假管理（改任一員工的休假,讀寫 `/api/admin/*`）。
 - `public/stats.html`：儀表板統計（讀 `/api/stats`）。
+- `public/dpc.json`：DPC（3D team）即時休假,由下方 GitHub Action 產生。
+- `scripts/build-dpc.mjs`、`.github/workflows/sync-dpc.yml`：Base44 → `public/dpc.json` 同步。
 - `wrangler.toml`：Worker 設定（D1 綁定 + 靜態資源 `public/`）。
 
 ## 網址
