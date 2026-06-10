@@ -106,10 +106,8 @@
     display: flex; align-items: center; justify-content: center;
     height: 100%; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff;
   }
-  td.day.half { display: flex; flex-direction: column; }
-  td.day.half .chip { height: 50%; }
-  td.day.half .chip.am { align-self: stretch; margin-bottom: auto; }
-  td.day.half .chip.pm { align-self: stretch; margin-top: auto; }
+  td.day.half { display: flex; flex-direction: column; gap: 1px; }
+  td.day.half .chip { height: calc(50% - 1px); font-size: 11px; }
 
   .status { padding: 24px; color: var(--muted); font-size: 14px; }
   .err { color: #b91c1c; }
@@ -137,6 +135,8 @@
     <button id="rangeBtn">🗓️ 區間</button>
     <span class="muted" id="editHint">選假別後點格子＝填入；雙擊格子＝取消</span>
   </div>
+
+  <div class="legend" id="deptbar"><span class="muted">部門：</span></div>
 
   <div class="legend" id="legend"></div>
   <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
@@ -175,6 +175,7 @@ let rangeMode = false, rangeEmp = null, rangeStart = null;
 let editingInit = false;
 let fullYear = false;       // 全年模式
 let highlightDate = null;   // 雙擊日期欄高亮整欄
+let DEPTSEL = new Set();    // 部門篩選(空=全部)
 
 // 依目前檢視(單月/全年)產生日期欄
 function daysForView(){
@@ -243,18 +244,15 @@ function resolveCell(lv, legend){
   return { label, p, color };
 }
 
-// 由分槽(full/am/pm)產生一格 <td>。full 佔滿;am 上半、pm 下半,可並存。
+// 由分槽(full/am/pm)產生一格 <td>。
+// 整天 / 只有單一半天 → 整格滿版(看得清楚);同一天上午+下午都有 → 上下各半。
 function cellHTML(slots, cls, empAttr, date){
   if (slots && (slots.full || slots.am || slots.pm)){
-    if (slots.full){
-      const c = slots.full, p = periodOf(c.label);
-      if (p === 'full') return `<td class="${cls}"${empAttr} data-date="${date}"><div class="chip" style="background:${c.color}">${c.label}</div></td>`;
-      return `<td class="${cls} half"${empAttr} data-date="${date}"><div class="chip ${p}" style="background:${c.color}">${c.label}</div></td>`;
+    if (slots.am && slots.pm){
+      return `<td class="${cls} half"${empAttr} data-date="${date}"><div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div><div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div></td>`;
     }
-    let inner = '';
-    if (slots.am) inner += `<div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div>`;
-    if (slots.pm) inner += `<div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div>`;
-    return `<td class="${cls} half"${empAttr} data-date="${date}">${inner}</td>`;
+    const c = slots.full || slots.am || slots.pm;
+    return `<td class="${cls}"${empAttr} data-date="${date}"><div class="chip" style="background:${c.color}">${c.label}</div></td>`;
   }
   return `<td class="${cls}"${empAttr} data-date="${date}"></td>`;
 }
@@ -299,11 +297,20 @@ function render(data){
   });
   html += '</tr></thead><tbody>';
 
+  // 部門篩選列
+  const allDepts = data.departments || [];
+  const bar = document.getElementById('deptbar');
+  bar.innerHTML = '<span class="muted">部門：</span>' + allDepts.map(d=>
+    `<label class="item" style="cursor:pointer;"><input type="checkbox" class="dfilter" value="${(d.name||'').replace(/"/g,'&quot;')}" ${DEPTSEL.has(d.name)?'checked':''}/> ${d.name||''}</label>`).join('')
+    + (DEPTSEL.size ? ' <button class="btn sm" id="dfClear" style="padding:2px 8px;">清除</button>' : '');
+  bar.querySelectorAll('.dfilter').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); render(LAST); });
+  const dfc = document.getElementById('dfClear'); if (dfc) dfc.onclick=()=>{ DEPTSEL.clear(); render(LAST); };
+
   // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
   HOLIDAYS = holidays;
   EMP = {}; EMP_DEPT = {}; DEPT_MEMBERS = {};
   const colCount = days.length + 1;
-  const depts = data.departments || [];
+  const depts = DEPTSEL.size ? allDepts.filter(d=>DEPTSEL.has(d.name)) : allDepts;
   let anyMember = false;
   depts.forEach((dept, di)=>{
     html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
