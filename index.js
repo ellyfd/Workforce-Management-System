@@ -44,6 +44,26 @@ function adminOk(env, request) {
   return request.headers.get('X-Admin-Key') === key;
 }
 
+// 一筆休假的 upsert：依 period 互斥規則先刪後寫。
+// full 會清掉整天(含 AM/PM)；AM 只清 full+AM；PM 只清 full+PM（AM 與 PM 可並存）。
+function leaveUpsertStmts(env, employeeId, date, leaveTypeId, period, note = null) {
+  const p = period === 'morning' || period === 'afternoon' ? period : 'full';
+  const clear = p === 'morning' ? ['full', 'morning'] : p === 'afternoon' ? ['full', 'afternoon'] : ['full', 'morning', 'afternoon'];
+  const ph = clear.map(() => '?').join(',');
+  return [
+    env.DB.prepare(`DELETE FROM leave_records WHERE employee_id=? AND date=? AND period IN (${ph})`).bind(employeeId, date, ...clear),
+    env.DB.prepare('INSERT INTO leave_records (id,employee_id,date,leave_type_id,period,note) VALUES (?,?,?,?,?,?)')
+      .bind(crypto.randomUUID(), employeeId, date, leaveTypeId, p, note),
+  ];
+}
+
+// 大量刪除分批執行，避免一次對 D1 發太多並發（每批 N 筆）。
+async function runInBatches(items, fn, size = 10) {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(fn));
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -66,6 +86,16 @@ export default {
           "SELECT id, name, english_name, department_ids FROM employees WHERE status='active' ORDER BY sort_order",
         ).all();
         return json(r.results);
+      }
+
+      // 公開假日清單（前端區間請假用來略過國定假日）
+      if (pathname === '/api/holidays' && method === 'GET') {
+        const year = url.searchParams.get('year');
+        let q = 'SELECT date, name FROM holidays';
+        const binds = [];
+        if (year) { q += ' WHERE date >= ? AND date <= ?'; binds.push(`${year}-01-01`, `${year}-12-31`); }
+        const r = await env.DB.prepare(q).bind(...binds).all();
+        return json(r.results.map((h) => h.date));
       }
 
       if (pathname === '/api/leave-types' && method === 'GET') {
@@ -110,15 +140,33 @@ export default {
         if (!me) return json({ error: 'not_bound' }, 401);
         const { date, leave_type_id, period = 'full' } = await request.json();
         if (!date || !leave_type_id) return json({ error: 'missing_fields' }, 400);
-        // 同一天同時段先清掉再寫，避免重複
-        await env.DB.prepare(
-          'DELETE FROM leave_records WHERE employee_id = ? AND date = ? AND period = ?',
-        ).bind(me.id, date, period).run();
-        const id = crypto.randomUUID();
-        await env.DB.prepare(
-          'INSERT INTO leave_records (id, employee_id, date, leave_type_id, period) VALUES (?,?,?,?,?)',
-        ).bind(id, me.id, date, leave_type_id, period).run();
-        return json({ id, employee_id: me.id, date, leave_type_id, period });
+        await env.DB.batch(leaveUpsertStmts(env, me.id, date, leave_type_id, period));
+        return json({ ok: true, employee_id: me.id, date, leave_type_id, period });
+      }
+
+      // 區間請假：一次批次寫入多天（前端已算好、週末/假日已略過）
+      if (pathname === '/api/my-leaves/bulk' && method === 'POST') {
+        const me = await meFromToken(env, token(request));
+        if (!me) return json({ error: 'not_bound' }, 401);
+        const { items = [] } = await request.json();
+        if (!Array.isArray(items) || !items.length) return json({ error: 'empty' }, 400);
+        const stmts = [];
+        for (const it of items) {
+          if (!it.date || !it.leave_type_id) continue;
+          stmts.push(...leaveUpsertStmts(env, me.id, it.date, it.leave_type_id, it.period || 'full'));
+        }
+        await env.DB.batch(stmts);
+        return json({ ok: true, count: stmts.length / 2 });
+      }
+
+      // 區間/連續段刪除：刪除本人指定的多筆 id（分批,避免一次轟 D1）
+      if (pathname === '/api/my-leaves/delete' && method === 'POST') {
+        const me = await meFromToken(env, token(request));
+        if (!me) return json({ error: 'not_bound' }, 401);
+        const { ids = [] } = await request.json();
+        await runInBatches(ids, (id) =>
+          env.DB.prepare('DELETE FROM leave_records WHERE id = ? AND employee_id = ?').bind(id, me.id).run());
+        return json({ ok: true, count: ids.length });
       }
 
       const delMatch = pathname.match(/^\/api\/my-leaves\/(.+)$/);
@@ -161,14 +209,30 @@ export default {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
         const { employee_id, date, leave_type_id, period = 'full', note = null } = await request.json();
         if (!employee_id || !date || !leave_type_id) return json({ error: 'missing_fields' }, 400);
-        await env.DB.prepare(
-          'DELETE FROM leave_records WHERE employee_id = ? AND date = ? AND period = ?',
-        ).bind(employee_id, date, period).run();
-        const id = crypto.randomUUID();
-        await env.DB.prepare(
-          'INSERT INTO leave_records (id, employee_id, date, leave_type_id, period, note) VALUES (?,?,?,?,?,?)',
-        ).bind(id, employee_id, date, leave_type_id, period, note).run();
-        return json({ id, employee_id, date, leave_type_id, period, note });
+        await env.DB.batch(leaveUpsertStmts(env, employee_id, date, leave_type_id, period, note));
+        return json({ ok: true, employee_id, date, leave_type_id, period });
+      }
+
+      // 管理端區間請假：批次寫入某員工多天
+      if (pathname === '/api/admin/leaves/bulk' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { employee_id, items = [] } = await request.json();
+        if (!employee_id || !Array.isArray(items) || !items.length) return json({ error: 'missing_fields' }, 400);
+        const stmts = [];
+        for (const it of items) {
+          if (!it.date || !it.leave_type_id) continue;
+          stmts.push(...leaveUpsertStmts(env, employee_id, it.date, it.leave_type_id, it.period || 'full', it.note || null));
+        }
+        await env.DB.batch(stmts);
+        return json({ ok: true, count: stmts.length / 2 });
+      }
+
+      // 管理端多筆刪除（區間/連續段）
+      if (pathname === '/api/admin/leaves/delete' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { ids = [] } = await request.json();
+        await runInBatches(ids, (id) => env.DB.prepare('DELETE FROM leave_records WHERE id = ?').bind(id).run());
+        return json({ ok: true, count: ids.length });
       }
 
       const adminDel = pathname.match(/^\/api\/admin\/leaves\/(.+)$/);
