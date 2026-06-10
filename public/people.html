@@ -67,7 +67,7 @@ function renderEmp(){
       <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
       <td>${dep?esc(dep):'<span class="muted">—</span>'}</td>
       <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span></td>
-      <td class="row"><button class="iconbtn" data-edit="${esc(e.id)}">✏️</button><button class="iconbtn" data-del="${esc(e.id)}">🗑️</button></td>
+      <td class="row"><button class="iconbtn" data-edit="${esc(e.id)}">編輯</button><button class="iconbtn" data-del="${esc(e.id)}">刪除</button></td>
     </tr>`;
   }).join('');
   const selBar = selected.size ? `<div class="selbar">
@@ -228,7 +228,7 @@ function renderDept(){
       <td><input class="num" type="number" value="${d.sort_order??0}" data-sort="${esc(d.id)}" /></td>
       <td><b>${esc(d.name)}</b></td>
       <td><span class="tag blue">${d.member_count??0} 人</span></td>
-      <td class="row"><button class="iconbtn" data-dedit="${esc(d.id)}">✏️</button><button class="iconbtn" data-ddel="${esc(d.id)}">🗑️</button></td>
+      <td class="row"><button class="iconbtn" data-dedit="${esc(d.id)}">編輯</button><button class="iconbtn" data-ddel="${esc(d.id)}">刪除</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">

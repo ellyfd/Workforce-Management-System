@@ -41,7 +41,7 @@ function renderLt(){
       <td><b>${esc(t.name)}</b></td>
       <td><span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)}</span></td>
       <td>${t.sort_order??0}</td>
-      <td class="row"><button class="iconbtn" data-edit="${esc(t.id)}">✏️</button><button class="iconbtn" data-del="${esc(t.id)}">🗑️</button></td>
+      <td class="row"><button class="iconbtn" data-edit="${esc(t.id)}">編輯</button><button class="iconbtn" data-del="${esc(t.id)}">刪除</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">
@@ -95,7 +95,7 @@ function renderHo(){
     <tr>
       <td><b>${esc(h.date)}</b> <span class="muted">${'日一二三四五六'[new Date(h.date+'T00:00:00').getDay()]}</span></td>
       <td>${esc(h.name||'')||'<span class="muted">—</span>'}</td>
-      <td class="row"><button class="iconbtn" data-del="${esc(h.id)}">🗑️</button></td>
+      <td class="row"><button class="iconbtn" data-del="${esc(h.id)}">刪除</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">

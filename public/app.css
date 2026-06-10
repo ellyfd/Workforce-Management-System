@@ -12,6 +12,7 @@ html,body{ margin:0; }
 body{
   font-family:-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif;
   color:var(--ink); background:var(--bg); -webkit-text-size-adjust:100%;
+  font-size:14px; line-height:1.5;
 }
 
 /* ── 側邊欄 ───────────────────────────────────────── */
@@ -20,18 +21,16 @@ body{
   background:var(--card); border-right:1px solid var(--border);
   overflow-y:auto; z-index:60; display:flex; flex-direction:column;
 }
-.app-sidebar .brand{ padding:16px 16px 12px; border-bottom:1px solid var(--border); }
-.app-sidebar .brand b{ font-size:16px; display:block; }
-.app-sidebar .brand small{ color:var(--muted); font-size:11px; }
-.app-nav{ padding:8px; flex:1; }
-.app-nav .sect{ color:var(--muted); font-size:11px; font-weight:600; padding:12px 10px 6px; letter-spacing:.04em; }
-.app-nav a{
-  display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px;
-  color:var(--ink); text-decoration:none; font-size:14px; margin:2px 0;
+.app-sidebar .brand{ padding:18px 16px 14px; border-bottom:1px solid var(--border); font-size:15px; font-weight:700; letter-spacing:.01em; }
+.app-nav{ padding:6px 8px; flex:1; }
+.app-nav .nav-sect{ color:var(--muted); font-size:11px; font-weight:600; padding:14px 10px 6px; letter-spacing:.08em; }
+.app-nav .navlink{
+  display:block; padding:9px 10px 9px 12px; border-radius:6px;
+  color:var(--ink); text-decoration:none; font-size:14px; margin:1px 0;
+  border-left:2px solid transparent;
 }
-.app-nav a .ic{ width:18px; text-align:center; font-size:15px; }
-.app-nav a:hover{ background:#f3f4f6; }
-.app-nav a.active{ background:var(--blue-bg); color:var(--blue); font-weight:600; }
+.app-nav .navlink:hover{ background:#f3f4f6; }
+.app-nav .navlink.active{ background:var(--blue-bg); color:var(--blue); font-weight:600; border-left-color:var(--blue); }
 
 /* ── 手機頂列 + 抽屜 ──────────────────────────────── */
 .app-topbar{ display:none; }

@@ -129,10 +129,10 @@
     <button id="yearBtn">全年</button>
   </div>
 
-  <div class="toolbar">
+  <div class="toolbar admin-only">
     <span class="muted">編輯：</span>
     <select id="ltype"><option value="">選擇假別…</option></select>
-    <button id="rangeBtn">🗓️ 區間</button>
+    <button id="rangeBtn">區間</button>
     <span class="muted" id="editHint">選假別後點格子＝填入；雙擊格子＝取消</span>
   </div>
 
@@ -320,7 +320,7 @@ function render(data){
       if (m.id){ EMP[m.id] = { name: m.name, leaves: m.leaves || {} }; EMP_DEPT[m.id] = di; DEPT_MEMBERS[di].push(m.id); }
       const empAttr = m.id ? ` data-emp="${m.id}"` : '';
       const rowAttr = m.id ? ` class="emprow" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
-      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⠿</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
+      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⋮⋮</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
       days.forEach(day=>{
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
@@ -357,22 +357,26 @@ function render(data){
 }
 
 // ── 編輯：選假別 + 單擊填入 / 雙擊取消 / 區間請假（改任一員工）─────────
+const isAdmin = ()=> !!(window.App && window.App.isAdmin);
 async function initEditing(){
   if (editingInit) return;
   editingInit = true;
-  try { leaveTypes = await (await fetch(`${API_BASE}/api/leave-types`, { cache:'no-store' })).json(); } catch (_) { leaveTypes = []; }
-  const sel = document.getElementById('ltype');
-  sel.innerHTML = '<option value="">選擇假別…</option>' + leaveTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
-  sel.onchange = (e)=>{ selType = e.target.value; };
-  const rb = document.getElementById('rangeBtn');
-  rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
+  const sel = document.getElementById('ltype'); // 非管理員時工具列已被移除
+  if (sel) {
+    try { leaveTypes = await (await fetch(`${API_BASE}/api/leave-types`, { cache:'no-store' })).json(); } catch (_) { leaveTypes = []; }
+    sel.innerHTML = '<option value="">選擇假別…</option>' + leaveTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+    sel.onchange = (e)=>{ selType = e.target.value; };
+    const rb = document.getElementById('rangeBtn');
+    rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
+  }
   const table = document.getElementById('table');
-  table.addEventListener('click', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
-  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
+  table.addEventListener('click', (e)=>{ if (!isAdmin()) return; const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
+  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ if (isAdmin()) onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
 }
 
 // 拖曳排序員工（限同部門）：放開後依新順序重設 sort_order。
 function attachDrag(){
+  if (!isAdmin()) return; // 僅管理員可拖曳排序
   document.querySelectorAll('tr.emprow').forEach(tr=>{
     tr.ondragstart = (e)=>{ dragEmp = tr.dataset.emp; tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
     tr.ondragend = ()=>{ tr.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x=>x.classList.remove('dragover')); };
@@ -461,7 +465,7 @@ async function warnFor(empId, dates, type){
 }
 async function fillCell(empId, date, type){
   const w = await warnFor(empId, [date], type);
-  if (w.length && !confirm(`⚠️ ${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要請假嗎？')) return;
+  if (w.length && !confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要請假嗎？')) return;
   const r = await App.adminApi('/api/admin/leaves', { method:'POST', body: JSON.stringify({ employee_id: empId, date, leave_type_id: type, period: periodOfType(type) }) });
   if (!r.ok){ alert('填入失敗（可能需要管理密鑰）'); return; }
   load();
@@ -483,7 +487,7 @@ async function fillRangeRow(empId, a, b, type){
   }
   if (!items.length){ alert('此區間內沒有可請假的日子（週末/假日已略過）。'); render(LAST); return; }
   const w = await warnFor(empId, items.map(i=>i.date), type);
-  if (w.length && !confirm(`⚠️ ${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要送出區間請假嗎？')){ render(LAST); return; }
+  if (w.length && !confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要送出區間請假嗎？')){ render(LAST); return; }
   const r = await App.adminApi('/api/admin/leaves/bulk', { method:'POST', body: JSON.stringify({ employee_id: empId, items }) });
   if (!r.ok){ alert('區間請假失敗'); return; }
   load();

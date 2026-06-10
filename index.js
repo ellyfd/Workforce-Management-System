@@ -36,12 +36,18 @@ async function meFromToken(env, t) {
   return env.DB.prepare('SELECT * FROM employees WHERE device_token = ?').bind(t).first();
 }
 
-// 管理權限：未設定 ADMIN_KEY 環境變數時開放（內部低風險用途）；
-// 設定後則需請求帶 X-Admin-Key 且相符。
-function adminOk(env, request) {
+// 管理權限：X-Admin-Key 相符 OR 本裝置綁定的員工 role=admin 才可。
+// 啟動保險：若系統中尚無任何 admin 且未設 ADMIN_KEY，暫時開放(讓你先指派 admin)。
+async function canAdmin(env, request) {
   const key = env.ADMIN_KEY;
-  if (!key) return true;
-  return request.headers.get('X-Admin-Key') === key;
+  if (key && request.headers.get('X-Admin-Key') === key) return true;
+  const me = await meFromToken(env, token(request));
+  if (me && me.role === 'admin') return true;
+  if (!key) {
+    const anyAdmin = await env.DB.prepare("SELECT 1 FROM employees WHERE role='admin' LIMIT 1").first();
+    if (!anyAdmin) return true;
+  }
+  return false;
 }
 
 // 一筆休假的 upsert：依 period 互斥規則先刪後寫。
@@ -138,7 +144,7 @@ export default {
       if (pathname === '/api/me' && method === 'GET') {
         const me = await meFromToken(env, token(request));
         if (!me) return json({ error: 'not_bound' }, 401);
-        return json({ id: me.id, name: me.name, english_name: me.english_name });
+        return json({ id: me.id, name: me.name, english_name: me.english_name, role: me.role || 'user' });
       }
 
       if (pathname === '/api/my-leaves' && method === 'GET') {
@@ -201,7 +207,7 @@ export default {
 
       // ── 管理端點（新增/刪除任一員工的休假、維護用資料）─────────────
       if (pathname === '/api/admin/meta' && method === 'GET') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const [depts, emps, types] = await Promise.all([
           env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
           env.DB.prepare("SELECT id, name, english_name, department_ids FROM employees WHERE status = 'active' ORDER BY sort_order").all(),
@@ -211,7 +217,7 @@ export default {
       }
 
       if (pathname === '/api/admin/leaves' && method === 'GET') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const empId = url.searchParams.get('employee_id');
         const year = url.searchParams.get('year');
         if (!empId) return json({ error: 'missing_employee_id' }, 400);
@@ -226,7 +232,7 @@ export default {
       }
 
       if (pathname === '/api/admin/leaves' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { employee_id, date, leave_type_id, period = 'full', note = null } = await request.json();
         if (!employee_id || !date || !leave_type_id) return json({ error: 'missing_fields' }, 400);
         await env.DB.batch(leaveUpsertStmts(env, employee_id, date, leave_type_id, period, note));
@@ -235,7 +241,7 @@ export default {
 
       // 管理端區間請假：批次寫入某員工多天
       if (pathname === '/api/admin/leaves/bulk' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { employee_id, items = [] } = await request.json();
         if (!employee_id || !Array.isArray(items) || !items.length) return json({ error: 'missing_fields' }, 400);
         const stmts = [];
@@ -249,7 +255,7 @@ export default {
 
       // 管理端多筆刪除（區間/連續段）
       if (pathname === '/api/admin/leaves/delete' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { ids = [] } = await request.json();
         await runInBatches(ids, (id) => env.DB.prepare('DELETE FROM leave_records WHERE id = ?').bind(id).run());
         return json({ ok: true, count: ids.length });
@@ -257,7 +263,7 @@ export default {
 
       // 管理端依「員工 + 日期」刪除（全部排休的格子沒有 record id，用這個刪整格/整段）
       if (pathname === '/api/admin/leaves/delete-by-date' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { employee_id, dates = [], period } = await request.json();
         if (!employee_id || !dates.length) return json({ error: 'missing_fields' }, 400);
         await runInBatches(dates, (d) => period
@@ -268,14 +274,14 @@ export default {
 
       const adminDel = pathname.match(/^\/api\/admin\/leaves\/(.+)$/);
       if (adminDel && method === 'DELETE') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         await env.DB.prepare('DELETE FROM leave_records WHERE id = ?').bind(adminDel[1]).run();
         return json({ ok: true });
       }
 
       // ── 部門 CRUD ───────────────────────────────────────────────
       if (pathname === '/api/admin/departments' && method === 'GET') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare(
           `SELECT d.*, (SELECT COUNT(*) FROM employees e
               WHERE e.status='active' AND instr(e.department_ids, d.id) > 0) AS member_count
@@ -284,7 +290,7 @@ export default {
         return json(r.results);
       }
       if (pathname === '/api/admin/departments' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { name, sort_order = 0 } = await request.json();
         if (!name) return json({ error: 'missing_name' }, 400);
         const id = 'd_' + crypto.randomUUID().slice(0, 8);
@@ -294,7 +300,7 @@ export default {
       }
       const deptM = pathname.match(/^\/api\/admin\/departments\/(.+)$/);
       if (deptM && method === 'PUT') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const b = await request.json();
         await env.DB.prepare(
           'UPDATE departments SET name = COALESCE(?,name), sort_order = COALESCE(?,sort_order), status = COALESCE(?,status) WHERE id = ?',
@@ -302,32 +308,32 @@ export default {
         return json({ ok: true });
       }
       if (deptM && method === 'DELETE') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         await env.DB.prepare('DELETE FROM departments WHERE id = ?').bind(deptM[1]).run();
         return json({ ok: true });
       }
 
       // ── 員工 CRUD ───────────────────────────────────────────────
       if (pathname === '/api/admin/employees' && method === 'GET') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare(
-          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2 FROM employees ORDER BY sort_order, name',
+          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role FROM employees ORDER BY sort_order, name',
         ).all();
         return json(r.results);
       }
       if (pathname === '/api/admin/employees' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
-        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0, deputy_1 = null, deputy_2 = null } = await request.json();
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0, deputy_1 = null, deputy_2 = null, role = 'user' } = await request.json();
         if (!name) return json({ error: 'missing_name' }, 400);
         const id = 'e_' + crypto.randomUUID().slice(0, 8);
         await env.DB.prepare(
-          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2) VALUES (?,?,?,?,?,?,?,?)',
-        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order, deputy_1 || null, deputy_2 || null).run();
+          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role) VALUES (?,?,?,?,?,?,?,?,?)',
+        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order, deputy_1 || null, deputy_2 || null, role).run();
         return json({ id });
       }
       // 批次更新（統一改部門 / 狀態；未給的欄位不動）
       if (pathname === '/api/admin/employees/bulk' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { ids = [], department_ids, status } = await request.json();
         if (!ids.length) return json({ error: 'empty' }, 400);
         const dids = department_ids !== undefined ? JSON.stringify(department_ids || []) : null;
@@ -339,7 +345,7 @@ export default {
       }
       // 批次刪除（含職代參照清理）
       if (pathname === '/api/admin/employees/delete' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { ids = [] } = await request.json();
         await runInBatches(ids, async (id) => {
           await clearDeputyRefs(env, id);
@@ -350,20 +356,20 @@ export default {
       }
       const empM = pathname.match(/^\/api\/admin\/employees\/(.+)$/);
       if (empM && method === 'PUT') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const b = await request.json();
         const dids = b.department_ids !== undefined ? JSON.stringify(b.department_ids || []) : null;
         await env.DB.prepare(
           `UPDATE employees SET name = COALESCE(?,name), english_name = COALESCE(?,english_name),
              department_ids = COALESCE(?,department_ids), status = COALESCE(?,status),
-             sort_order = COALESCE(?,sort_order), deputy_1 = ?, deputy_2 = ? WHERE id = ?`,
+             sort_order = COALESCE(?,sort_order), deputy_1 = ?, deputy_2 = ?, role = COALESCE(?,role) WHERE id = ?`,
         ).bind(b.name ?? null, b.english_name ?? null, dids, b.status ?? null, b.sort_order ?? null,
-          b.deputy_1 ?? null, b.deputy_2 ?? null, empM[1]).run();
+          b.deputy_1 ?? null, b.deputy_2 ?? null, b.role ?? null, empM[1]).run();
         if (b.status === 'inactive') await clearDeputyRefs(env, empM[1]); // 離職→清理別人指向他的職代
         return json({ ok: true });
       }
       if (empM && method === 'DELETE') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         await clearDeputyRefs(env, empM[1]); // 刪除→清理懸空職代參照
         await env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ?').bind(empM[1]).run();
         await env.DB.prepare('DELETE FROM employees WHERE id = ?').bind(empM[1]).run();
@@ -372,12 +378,12 @@ export default {
 
       // ── 假別 CRUD ───────────────────────────────────────────────
       if (pathname === '/api/admin/leave-types' && method === 'GET') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare('SELECT * FROM leave_types ORDER BY sort_order').all();
         return json(r.results);
       }
       if (pathname === '/api/admin/leave-types' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { name, short_name = null, color = '#64748b', sort_order = 0 } = await request.json();
         if (!name) return json({ error: 'missing_name' }, 400);
         const id = 'lt_' + crypto.randomUUID().slice(0, 8);
@@ -387,7 +393,7 @@ export default {
       }
       const ltM = pathname.match(/^\/api\/admin\/leave-types\/(.+)$/);
       if (ltM && method === 'PUT') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const b = await request.json();
         await env.DB.prepare(
           'UPDATE leave_types SET name = COALESCE(?,name), short_name = COALESCE(?,short_name), color = COALESCE(?,color), sort_order = COALESCE(?,sort_order) WHERE id = ?',
@@ -395,14 +401,14 @@ export default {
         return json({ ok: true });
       }
       if (ltM && method === 'DELETE') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         await env.DB.prepare('DELETE FROM leave_types WHERE id = ?').bind(ltM[1]).run();
         return json({ ok: true });
       }
 
       // ── 假日 CRUD ───────────────────────────────────────────────
       if (pathname === '/api/admin/holidays' && method === 'GET') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const year = url.searchParams.get('year');
         let q = 'SELECT * FROM holidays';
         const binds = [];
@@ -412,7 +418,7 @@ export default {
         return json(r.results);
       }
       if (pathname === '/api/admin/holidays' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { date, name = null, type = 'national' } = await request.json();
         if (!date) return json({ error: 'missing_date' }, 400);
         await env.DB.prepare('DELETE FROM holidays WHERE date = ?').bind(date).run();
@@ -423,14 +429,14 @@ export default {
       }
       const holM = pathname.match(/^\/api\/admin\/holidays\/(.+)$/);
       if (holM && method === 'DELETE') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         await env.DB.prepare('DELETE FROM holidays WHERE id = ?').bind(holM[1]).run();
         return json({ ok: true });
       }
 
       // 清理重複休假紀錄(同員工+日期+時段+假別只留一筆)
       if (pathname === '/api/admin/dedupe-leaves' && method === 'POST') {
-        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare(
           'DELETE FROM leave_records WHERE rowid NOT IN (SELECT MIN(rowid) FROM leave_records GROUP BY employee_id, date, period, leave_type_id)',
         ).run();
