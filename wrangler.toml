@@ -2,6 +2,11 @@ name = "workforcemanagement"
 main = "index.js"
 compatibility_date = "2024-09-01"
 
+# 前端網頁（index.html=全部排休、me.html=我的排休）由 Worker 一併服務。
+# 靜態資源優先比對：對得上的路徑直接回檔案，對不上的（例如 /api/*）才進 index.js。
+[assets]
+directory = "./public"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "dpc-hub"

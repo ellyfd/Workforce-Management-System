@@ -41,9 +41,9 @@
 </div>
 
 <script>
-// ⚠️ 部署後把下面換成你的 Worker 網址（或開頁時用 ?api=... 覆蓋）。
-const API_BASE = new URLSearchParams(location.search).get('api')
-  || 'https://dev-division-api.YOURSUBDOMAIN.workers.dev';
+// 由 Worker 一併服務本頁（同源）；可用 ?api=<Worker 網址> 覆蓋。
+const API_BASE = (new URLSearchParams(location.search).get('api')
+  || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
 
 const WEEKDAY = ['日','一','二','三','四','五','六'];
 
@@ -84,7 +84,7 @@ async function init(){
 async function showLogin(){
   const emps = await (await api('/api/employees')).json();
   app.innerHTML = `
-    <h1>我的排休</h1>
+    <div class="row" style="justify-content:space-between;"><h1>我的排休</h1><a class="link" href="index.html">← 全部排休</a></div>
     <div class="muted">第一次使用：請選擇你自己（會記住這台裝置，下次免選）。</div>
     <div class="card">
       <input id="search" type="text" placeholder="輸入中文名或英文名搜尋…" />
@@ -139,7 +139,7 @@ function showCalendar(){
   app.innerHTML = `
     <div class="row" style="justify-content:space-between;">
       <div><h1>我的排休</h1><div class="muted">${me.name}${me.english_name?`（${me.english_name}）`:''}</div></div>
-      <button class="link" id="logout">切換身分</button>
+      <div class="row" style="gap:12px;"><a class="link" href="index.html">← 全部排休</a><button class="link" id="logout">切換身分</button></div>
     </div>
     <div class="card">
       <div class="row"><span class="muted">假別：</span><div style="flex:1;min-width:160px;"><select id="ltype">${opts}</select></div></div>
