@@ -69,8 +69,47 @@
     return null;
   }
 
+  function ensureToken() {
+    let t = localStorage.getItem('dev_device_token');
+    if (!t) { t = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)); localStorage.setItem('dev_device_token', t); }
+    return t;
+  }
+
+  // 身分閘門：一進站尚未綁定 → 全螢幕選名字並綁定本裝置。
+  async function showBindGate() {
+    const t = ensureToken();
+    let emps = [];
+    try { emps = await (await fetch(API_BASE + '/api/employees', { cache: 'no-store' })).json(); } catch (_) {}
+    document.body.insertAdjacentHTML('afterbegin', `
+      <div class="bindgate" id="bindGate">
+        <div class="bindbox">
+          <div class="bindbrand">開發處休假表</div>
+          <h2>請選擇你的名字</h2>
+          <p class="muted">綁定後本裝置會記住你的身分，下次免選（可在「我的排休 → 切換身分」更換）。</p>
+          <input id="bindSearch" type="text" placeholder="輸入中文名或英文名搜尋…" autocomplete="off" />
+          <div class="bindlist" id="bindList"></div>
+        </div>
+      </div>`);
+    const listEl = document.getElementById('bindList');
+    const draw = (kw = '') => {
+      const k = kw.trim().toLowerCase();
+      listEl.innerHTML = emps
+        .filter((e) => !k || (e.name || '').toLowerCase().includes(k) || (e.english_name || '').toLowerCase().includes(k))
+        .map((e) => `<button class="binditem" data-id="${esc(e.id)}"><b>${esc(e.name)}</b>${e.english_name ? ` <span class="muted">${esc(e.english_name)}</span>` : ''}</button>`)
+        .join('') || '<div class="muted" style="padding:10px;">查無此人</div>';
+      listEl.querySelectorAll('.binditem').forEach((b) => b.onclick = async () => {
+        const r = await fetch(API_BASE + '/api/bind', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Token': t }, body: JSON.stringify({ employee_id: b.dataset.id }) });
+        if (!r.ok) { alert('綁定失敗，請重試'); return; }
+        location.reload();
+      });
+    };
+    draw();
+    document.getElementById('bindSearch').oninput = (e) => draw(e.target.value);
+  }
+
   async function mount() {
     const me = await fetchMe();
+    if (!me) { await showBindGate(); return; } // 綁定後會自動 reload
     const isAdmin = !!(me && me.role === 'admin');
     window.App.me = me; window.App.isAdmin = isAdmin;
     document.body.classList.toggle('is-admin', isAdmin);
