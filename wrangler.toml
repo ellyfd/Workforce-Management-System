@@ -1,0 +1,8 @@
+name = "workforcemanagement"
+main = "index.js"
+compatibility_date = "2024-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dpc-hub"
+database_id = "33f69061-a17d-431d-8105-343cadd695dc"
