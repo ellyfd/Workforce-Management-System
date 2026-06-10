@@ -67,6 +67,7 @@ let myLeaves = {};    // { 'YYYY-MM-DD': {id, leave_type_id, period} }
 let selType = '';     // 目前選的假別 id（''＝尚未選）
 let rangeMode = false; // 區間請假模式
 let rangeStart = null; // 區間起點 date
+let holidays = new Set(); // 國定假日（區間略過用）
 
 const app = document.getElementById('app');
 const api = (path, opts = {}) => fetch(API_BASE + path, {
@@ -153,7 +154,14 @@ async function loadMyLeaves(){
   const recs = await (await api(`/api/my-leaves?year=${cur.getFullYear()}`)).json();
   myLeaves = {};
   for (const r of recs) myLeaves[r.date] = { id: r.id, leave_type_id: r.leave_type_id, period: r.period || 'full' };
+  // 載入該年國定假日（區間請假用來略過）
+  try {
+    const hs = await (await fetch(`${API_BASE}/api/holidays?year=${cur.getFullYear()}`, { cache:'no-store' })).json();
+    holidays = new Set(Array.isArray(hs) ? hs : []);
+  } catch (_) { holidays = new Set(); }
 }
+// 是否為「出差」類假別（出差連週末/假日都算,不略過）
+function isBizType(typeId){ return /差/.test(labelOf(typeId)); }
 
 // 由假別簡稱推時段：早→上午、午→下午、否則整天。
 function periodOfType(typeId){
@@ -263,13 +271,61 @@ function onCell(date){
   }
 }
 
-// 雙擊已填入的格子＝取消
+// 雙擊已填入的格子＝取消；若屬一段連續假,問要刪單日還是整段
 function onCellDbl(date){
   const lv = myLeaves[date];
-  if (lv && confirm('取消這天的請假？')) cancelLeave(lv.id);
+  if (!lv) return;
+  const run = buildDeleteRange(date);
+  if (run){
+    const whole = confirm(`這是一段連續 ${run.length} 天的「${labelOf(lv.leave_type_id)}」。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
+    if (whole) deleteIds(run.map(d => myLeaves[d].id));
+    else cancelLeave(lv.id);
+  } else if (confirm('取消這天的請假？')) {
+    cancelLeave(lv.id);
+  }
+}
+
+// 找出包含 date 的連續同假別區段（往前後掃相鄰日）；長度>1 才回傳日期陣列
+function buildDeleteRange(date){
+  const lv = myLeaves[date];
+  if (!lv) return null;
+  const type = lv.leave_type_id;
+  const has = (s) => myLeaves[s] && myLeaves[s].leave_type_id === type;
+  const dates = [date];
+  let d = new Date(date + 'T00:00:00');
+  while (true){ d.setDate(d.getDate()-1); const s = ymd(d.getFullYear(), d.getMonth()+1, d.getDate()); if (has(s)) dates.unshift(s); else break; }
+  d = new Date(date + 'T00:00:00');
+  while (true){ d.setDate(d.getDate()+1); const s = ymd(d.getFullYear(), d.getMonth()+1, d.getDate()); if (has(s)) dates.push(s); else break; }
+  return dates.length > 1 ? dates : null;
+}
+async function deleteIds(ids){
+  try {
+    const r = await api('/api/my-leaves/delete', { method:'POST', body: JSON.stringify({ ids }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await loadMyLeaves(); showCalendar();
+  } catch (e) { alert('刪除失敗：' + e.message); }
+}
+
+// 送出前警示：職代當天也請假 / 部門當天達 1/3。出差不檢查。回傳警示字串陣列。
+async function warnFor(dates, typeId){
+  if (isBizType(typeId) || !dates.length) return [];
+  try {
+    const r = await fetch(`${API_BASE}/api/leave-check?employee_id=${encodeURIComponent(me.id)}&dates=${dates.join(',')}`, { cache:'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json();
+    const msgs = [];
+    for (const d of dates){
+      const w = data.results[d]; if (!w) continue;
+      if (w.deputies && w.deputies.length) msgs.push(`${d}：職代 ${w.deputies.join('、')} 當天也請假`);
+      if (w.over) msgs.push(`${d}：部門當天請假已達 1/3（已 ${w.dept_count} 人）`);
+    }
+    return msgs;
+  } catch (_) { return []; }
 }
 
 async function addLeave(date, typeId){
+  const w = await warnFor([date], typeId);
+  if (w.length && !confirm('⚠️ 注意：\n' + w.join('\n') + '\n\n仍要請假嗎？')) return;
   try {
     await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id: typeId, period: periodOfType(typeId) }) });
     await loadMyLeaves(); showCalendar();
@@ -283,13 +339,22 @@ async function cancelLeave(id){
 }
 async function fillRange(startDate, endDate, typeId){
   const period = periodOfType(typeId);
-  const reqs = [];
+  const biz = isBizType(typeId); // 出差不略過週末/假日
+  const items = [];
   const d = new Date(startDate + 'T00:00:00'), end = new Date(endDate + 'T00:00:00');
   for (; d <= end; d.setDate(d.getDate()+1)){
+    const dow = d.getDay();
     const date = ymd(d.getFullYear(), d.getMonth()+1, d.getDate());
-    reqs.push(api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id: typeId, period }) }));
+    if (!biz && (dow===0 || dow===6 || holidays.has(date))) continue; // 略過週末/國定假日
+    items.push({ date, leave_type_id: typeId, period });
   }
-  try { await Promise.all(reqs); } catch (e) { alert('區間請假失敗：' + e.message); }
+  if (!items.length) { alert('此區間內沒有可請假的日子（週末/假日已略過）。'); return; }
+  const w = await warnFor(items.map(i => i.date), typeId);
+  if (w.length && !confirm('⚠️ 注意：\n' + w.join('\n') + '\n\n仍要送出區間請假嗎？')) return;
+  try {
+    const r = await api('/api/my-leaves/bulk', { method:'POST', body: JSON.stringify({ items }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  } catch (e) { alert('區間請假失敗：' + e.message); }
   await loadMyLeaves(); showCalendar();
 }
 

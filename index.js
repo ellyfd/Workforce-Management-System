@@ -44,6 +44,26 @@ function adminOk(env, request) {
   return request.headers.get('X-Admin-Key') === key;
 }
 
+// 一筆休假的 upsert：依 period 互斥規則先刪後寫。
+// full 會清掉整天(含 AM/PM)；AM 只清 full+AM；PM 只清 full+PM（AM 與 PM 可並存）。
+function leaveUpsertStmts(env, employeeId, date, leaveTypeId, period, note = null) {
+  const p = period === 'morning' || period === 'afternoon' ? period : 'full';
+  const clear = p === 'morning' ? ['full', 'morning'] : p === 'afternoon' ? ['full', 'afternoon'] : ['full', 'morning', 'afternoon'];
+  const ph = clear.map(() => '?').join(',');
+  return [
+    env.DB.prepare(`DELETE FROM leave_records WHERE employee_id=? AND date=? AND period IN (${ph})`).bind(employeeId, date, ...clear),
+    env.DB.prepare('INSERT INTO leave_records (id,employee_id,date,leave_type_id,period,note) VALUES (?,?,?,?,?,?)')
+      .bind(crypto.randomUUID(), employeeId, date, leaveTypeId, p, note),
+  ];
+}
+
+// 大量刪除分批執行，避免一次對 D1 發太多並發（每批 N 筆）。
+async function runInBatches(items, fn, size = 10) {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(fn));
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -66,6 +86,24 @@ export default {
           "SELECT id, name, english_name, department_ids FROM employees WHERE status='active' ORDER BY sort_order",
         ).all();
         return json(r.results);
+      }
+
+      // 公開假日清單（前端區間請假用來略過國定假日）
+      if (pathname === '/api/holidays' && method === 'GET') {
+        const year = url.searchParams.get('year');
+        let q = 'SELECT date, name FROM holidays';
+        const binds = [];
+        if (year) { q += ' WHERE date >= ? AND date <= ?'; binds.push(`${year}-01-01`, `${year}-12-31`); }
+        const r = await env.DB.prepare(q).bind(...binds).all();
+        return json(r.results.map((h) => h.date));
+      }
+
+      // 請假前警示檢查：職代當天也請假 / 部門當天請假達 1/3 上限
+      if (pathname === '/api/leave-check' && method === 'GET') {
+        const empId = url.searchParams.get('employee_id');
+        const dates = (url.searchParams.get('dates') || '').split(',').filter(Boolean);
+        if (!empId || !dates.length) return json({ error: 'missing_fields' }, 400);
+        return json(await buildLeaveCheck(env, empId, dates));
       }
 
       if (pathname === '/api/leave-types' && method === 'GET') {
@@ -110,15 +148,33 @@ export default {
         if (!me) return json({ error: 'not_bound' }, 401);
         const { date, leave_type_id, period = 'full' } = await request.json();
         if (!date || !leave_type_id) return json({ error: 'missing_fields' }, 400);
-        // 同一天同時段先清掉再寫，避免重複
-        await env.DB.prepare(
-          'DELETE FROM leave_records WHERE employee_id = ? AND date = ? AND period = ?',
-        ).bind(me.id, date, period).run();
-        const id = crypto.randomUUID();
-        await env.DB.prepare(
-          'INSERT INTO leave_records (id, employee_id, date, leave_type_id, period) VALUES (?,?,?,?,?)',
-        ).bind(id, me.id, date, leave_type_id, period).run();
-        return json({ id, employee_id: me.id, date, leave_type_id, period });
+        await env.DB.batch(leaveUpsertStmts(env, me.id, date, leave_type_id, period));
+        return json({ ok: true, employee_id: me.id, date, leave_type_id, period });
+      }
+
+      // 區間請假：一次批次寫入多天（前端已算好、週末/假日已略過）
+      if (pathname === '/api/my-leaves/bulk' && method === 'POST') {
+        const me = await meFromToken(env, token(request));
+        if (!me) return json({ error: 'not_bound' }, 401);
+        const { items = [] } = await request.json();
+        if (!Array.isArray(items) || !items.length) return json({ error: 'empty' }, 400);
+        const stmts = [];
+        for (const it of items) {
+          if (!it.date || !it.leave_type_id) continue;
+          stmts.push(...leaveUpsertStmts(env, me.id, it.date, it.leave_type_id, it.period || 'full'));
+        }
+        await env.DB.batch(stmts);
+        return json({ ok: true, count: stmts.length / 2 });
+      }
+
+      // 區間/連續段刪除：刪除本人指定的多筆 id（分批,避免一次轟 D1）
+      if (pathname === '/api/my-leaves/delete' && method === 'POST') {
+        const me = await meFromToken(env, token(request));
+        if (!me) return json({ error: 'not_bound' }, 401);
+        const { ids = [] } = await request.json();
+        await runInBatches(ids, (id) =>
+          env.DB.prepare('DELETE FROM leave_records WHERE id = ? AND employee_id = ?').bind(id, me.id).run());
+        return json({ ok: true, count: ids.length });
       }
 
       const delMatch = pathname.match(/^\/api\/my-leaves\/(.+)$/);
@@ -161,14 +217,30 @@ export default {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
         const { employee_id, date, leave_type_id, period = 'full', note = null } = await request.json();
         if (!employee_id || !date || !leave_type_id) return json({ error: 'missing_fields' }, 400);
-        await env.DB.prepare(
-          'DELETE FROM leave_records WHERE employee_id = ? AND date = ? AND period = ?',
-        ).bind(employee_id, date, period).run();
-        const id = crypto.randomUUID();
-        await env.DB.prepare(
-          'INSERT INTO leave_records (id, employee_id, date, leave_type_id, period, note) VALUES (?,?,?,?,?,?)',
-        ).bind(id, employee_id, date, leave_type_id, period, note).run();
-        return json({ id, employee_id, date, leave_type_id, period, note });
+        await env.DB.batch(leaveUpsertStmts(env, employee_id, date, leave_type_id, period, note));
+        return json({ ok: true, employee_id, date, leave_type_id, period });
+      }
+
+      // 管理端區間請假：批次寫入某員工多天
+      if (pathname === '/api/admin/leaves/bulk' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { employee_id, items = [] } = await request.json();
+        if (!employee_id || !Array.isArray(items) || !items.length) return json({ error: 'missing_fields' }, 400);
+        const stmts = [];
+        for (const it of items) {
+          if (!it.date || !it.leave_type_id) continue;
+          stmts.push(...leaveUpsertStmts(env, employee_id, it.date, it.leave_type_id, it.period || 'full', it.note || null));
+        }
+        await env.DB.batch(stmts);
+        return json({ ok: true, count: stmts.length / 2 });
+      }
+
+      // 管理端多筆刪除（區間/連續段）
+      if (pathname === '/api/admin/leaves/delete' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { ids = [] } = await request.json();
+        await runInBatches(ids, (id) => env.DB.prepare('DELETE FROM leave_records WHERE id = ?').bind(id).run());
+        return json({ ok: true, count: ids.length });
       }
 
       const adminDel = pathname.match(/^\/api\/admin\/leaves\/(.+)$/);
@@ -510,9 +582,9 @@ async function syncFromBase44(env) {
   emps.forEach((e, i) => {
     stmts.push(
       env.DB.prepare(
-        'INSERT INTO employees (id,name,english_name,department_ids,status,sort_order) VALUES (?,?,?,?,?,?) ' +
-          'ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status=excluded.status, sort_order=excluded.sort_order',
-      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), e.status || 'active', (i + 1) * 10),
+        'INSERT INTO employees (id,name,english_name,department_ids,status,sort_order,deputy_1,deputy_2) VALUES (?,?,?,?,?,?,?,?) ' +
+          'ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status=excluded.status, sort_order=excluded.sort_order, deputy_1=excluded.deputy_1, deputy_2=excluded.deputy_2',
+      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), e.status || 'active', (i + 1) * 10, e.deputy_1 || null, e.deputy_2 || null),
     );
   });
 
@@ -539,6 +611,32 @@ async function syncFromBase44(env) {
 // 一筆休假折算成「天數」：整天=1、半天(上/下午)=0.5。
 function leaveDays(period) {
   return period === 'morning' || period === 'afternoon' ? 0.5 : 1;
+}
+
+// 警示檢查：對某員工在多個日期,算出「職代當天也請假」與「部門當天請假達 1/3」。
+async function buildLeaveCheck(env, empId, dates) {
+  const emp = await env.DB.prepare('SELECT id, department_ids, deputy_1, deputy_2 FROM employees WHERE id = ?').bind(empId).first();
+  if (!emp) return { results: {} };
+  const deptId = safeIds(emp.department_ids)[0] || null;
+  const all = await env.DB.prepare("SELECT id, name, department_ids FROM employees WHERE status = 'active'").all();
+  const nameById = Object.fromEntries(all.results.map((e) => [e.id, e.name]));
+  const deptMemberIds = new Set(all.results.filter((e) => deptId && safeIds(e.department_ids).includes(deptId)).map((e) => e.id));
+  const threshold = Math.floor(deptMemberIds.size / 3);
+  const deputies = [emp.deputy_1, emp.deputy_2].filter(Boolean);
+
+  const ph = dates.map(() => '?').join(',');
+  const recs = await env.DB.prepare(`SELECT DISTINCT employee_id, date FROM leave_records WHERE date IN (${ph})`).bind(...dates).all();
+  const byDate = {};
+  for (const r of recs.results) (byDate[r.date] ||= new Set()).add(r.employee_id);
+
+  const results = {};
+  for (const d of dates) {
+    const onLeave = byDate[d] || new Set();
+    const dep = deputies.filter((id) => id !== empId && onLeave.has(id)).map((id) => nameById[id] || '職代');
+    const deptCount = [...onLeave].filter((id) => id !== empId && deptMemberIds.has(id)).length;
+    results[d] = { deputies: dep, dept_count: deptCount, over: threshold > 0 && deptCount >= threshold };
+  }
+  return { threshold, dept_size: deptMemberIds.size, results };
 }
 
 async function buildDashboard(env, date, deptId) {
