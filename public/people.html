@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>人員管理 · 開發處休假表</title>
+<link rel="stylesheet" href="app.css" />
+<style>
+  .checks{ display:flex; flex-wrap:wrap; gap:10px; }
+  .checks label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; color:var(--ink); }
+  .num{ width:54px; }
+  .note{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; font-size:12px; border-radius:8px; padding:8px 10px; margin-bottom:12px; }
+</style>
+</head>
+<body class="has-shell">
+<main class="app-main">
+  <div class="page-head"><h1>人員管理</h1></div>
+  <div class="note">提醒：DPC 部門由 Base44 定時同步覆蓋；在此手動改動會在下次同步被蓋掉。</div>
+  <div class="tabs">
+    <button id="tabEmp" class="active">員工管理</button>
+    <button id="tabDept">部門管理</button>
+  </div>
+  <div id="panel"><div class="status">載入中…</div></div>
+</main>
+
+<script src="app.js"></script>
+<script>
+const { esc } = App;
+let depts = [], emps = [], tab = 'emp';
+const STATUS = { active:'在職', parental_leave:'育嬰假', inactive:'離職', hidden:'隱藏' };
+const deptName = id => (depts.find(d=>d.id===id)||{}).name || '';
+function empDepts(e){ let ids=[]; try{ ids=JSON.parse(e.department_ids||'[]'); }catch(_){}; return ids.map(deptName).filter(Boolean); }
+
+async function loadAll(){
+  const [rd, re] = await Promise.all([ App.adminApi('/api/admin/departments'), App.adminApi('/api/admin/employees') ]);
+  if (rd.status===401 || re.status===401){ document.getElementById('panel').innerHTML = '<div class="status err">需要管理密鑰才能使用此頁。</div>'; return; }
+  depts = rd.ok ? await rd.json() : [];
+  emps = re.ok ? await re.json() : [];
+  render();
+}
+
+function render(){ tab==='emp' ? renderEmp() : renderDept(); }
+
+/* ── 員工 ── */
+function renderEmp(){
+  const rows = emps.map(e=>`
+    <tr>
+      <td><b>${esc(e.name)}</b>${e.english_name?` <span class="muted">${esc(e.english_name)}</span>`:''}</td>
+      <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
+      <td><span class="tag ${e.status==='active'?'green':'gray'}">${STATUS[e.status]||e.status}</span></td>
+      <td class="row"><button class="iconbtn" data-edit="${esc(e.id)}">✏️</button><button class="iconbtn" data-del="${esc(e.id)}">🗑️</button></td>
+    </tr>`).join('');
+  document.getElementById('panel').innerHTML = `
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+        <b>員工列表 <span class="muted">（${emps.length}）</span></b>
+        <button class="btn primary" id="add">＋ 新增員工</button>
+      </div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>姓名</th><th>部門</th><th>狀態</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="4" class="empty">尚無員工</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('add').onclick = ()=>empForm();
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(emps.find(x=>x.id===b.dataset.edit)));
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delEmp(b.dataset.del));
+}
+
+function empForm(e){
+  const cur = e || { name:'', english_name:'', department_ids:'[]', status:'active', sort_order:0 };
+  let ids=[]; try{ ids=JSON.parse(cur.department_ids||'[]'); }catch(_){}
+  const checks = depts.map(d=>`<label><input type="checkbox" value="${esc(d.id)}" ${ids.includes(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
+  const opts = Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${cur.status===k?'selected':''}>${v}</option>`).join('');
+  modal(`${e?'編輯':'新增'}員工`, `
+    <div class="field"><label>姓名</label><input id="f_name" value="${esc(cur.name)}" /></div>
+    <div class="field"><label>英文名 / 職代</label><input id="f_en" value="${esc(cur.english_name||'')}" /></div>
+    <div class="field"><label>部門</label><div class="checks">${checks||'<span class="muted">尚無部門</span>'}</div></div>
+    <div class="field"><label>狀態</label><select id="f_status">${opts}</select></div>
+  `, async ()=>{
+    const name = document.getElementById('f_name').value.trim();
+    if (!name) { alert('請輸入姓名'); return false; }
+    const department_ids = [...document.querySelectorAll('.modal .checks input:checked')].map(i=>i.value);
+    const body = { name, english_name: document.getElementById('f_en').value.trim(), department_ids, status: document.getElementById('f_status').value };
+    const res = e ? await App.adminApi(`/api/admin/employees/${e.id}`,{method:'PUT',body:JSON.stringify(body)})
+                  : await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify(body)});
+    if (!res.ok){ alert('儲存失敗'); return false; }
+    await loadAll(); return true;
+  });
+}
+async function delEmp(id){
+  const e = emps.find(x=>x.id===id);
+  if (!confirm(`確定刪除「${e?e.name:''}」？其休假紀錄也會一併刪除。`)) return;
+  const res = await App.adminApi(`/api/admin/employees/${id}`,{method:'DELETE'});
+  if (!res.ok){ alert('刪除失敗'); return; }
+  loadAll();
+}
+
+/* ── 部門 ── */
+function renderDept(){
+  const rows = depts.map(d=>`
+    <tr>
+      <td><input class="num" type="number" value="${d.sort_order??0}" data-sort="${esc(d.id)}" /></td>
+      <td><b>${esc(d.name)}</b></td>
+      <td><span class="tag blue">${d.member_count??0} 人</span></td>
+      <td class="row"><button class="iconbtn" data-dedit="${esc(d.id)}">✏️</button><button class="iconbtn" data-ddel="${esc(d.id)}">🗑️</button></td>
+    </tr>`).join('');
+  document.getElementById('panel').innerHTML = `
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+        <b>部門列表 <span class="muted">（${depts.length}）</span></b>
+        <button class="btn primary" id="addD">＋ 新增部門</button>
+      </div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>排序</th><th>部門名稱</th><th>員工人數</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="4" class="empty">尚無部門</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+  document.getElementById('addD').onclick = ()=>deptForm();
+  document.querySelectorAll('[data-dedit]').forEach(b=>b.onclick=()=>deptForm(depts.find(x=>x.id===b.dataset.dedit)));
+  document.querySelectorAll('[data-ddel]').forEach(b=>b.onclick=()=>delDept(b.dataset.ddel));
+  document.querySelectorAll('[data-sort]').forEach(inp=>inp.onchange=async ()=>{
+    await App.adminApi(`/api/admin/departments/${inp.dataset.sort}`,{method:'PUT',body:JSON.stringify({sort_order:Number(inp.value)||0})});
+    loadAll();
+  });
+}
+function deptForm(d){
+  const cur = d || { name:'', sort_order:(depts.length+1)*10 };
+  modal(`${d?'編輯':'新增'}部門`, `
+    <div class="field"><label>部門名稱</label><input id="d_name" value="${esc(cur.name)}" /></div>
+    <div class="field"><label>排序（小的在前）</label><input id="d_sort" type="number" value="${cur.sort_order??0}" /></div>
+  `, async ()=>{
+    const name = document.getElementById('d_name').value.trim();
+    if (!name){ alert('請輸入名稱'); return false; }
+    const body = { name, sort_order: Number(document.getElementById('d_sort').value)||0 };
+    const res = d ? await App.adminApi(`/api/admin/departments/${d.id}`,{method:'PUT',body:JSON.stringify(body)})
+                  : await App.adminApi('/api/admin/departments',{method:'POST',body:JSON.stringify(body)});
+    if (!res.ok){ alert('儲存失敗'); return false; }
+    await loadAll(); return true;
+  });
+}
+async function delDept(id){
+  const d = depts.find(x=>x.id===id);
+  if (!confirm(`確定刪除部門「${d?d.name:''}」？（員工不會被刪，但會失去此部門歸屬）`)) return;
+  const res = await App.adminApi(`/api/admin/departments/${id}`,{method:'DELETE'});
+  if (!res.ok){ alert('刪除失敗'); return; }
+  loadAll();
+}
+
+/* ── 共用 modal ── */
+function modal(title, inner, onSave){
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-scrim';
+  wrap.innerHTML = `<div class="modal"><h3>${esc(title)}</h3>${inner}
+    <div class="actions"><button class="btn" id="m_cancel">取消</button><button class="btn primary" id="m_save">儲存</button></div></div>`;
+  document.body.appendChild(wrap);
+  const close = ()=>wrap.remove();
+  wrap.querySelector('#m_cancel').onclick = close;
+  wrap.onclick = (e)=>{ if(e.target===wrap) close(); };
+  wrap.querySelector('#m_save').onclick = async ()=>{ const ok = await onSave(); if (ok!==false) close(); };
+}
+
+document.getElementById('tabEmp').onclick = ()=>{ tab='emp'; document.getElementById('tabEmp').classList.add('active'); document.getElementById('tabDept').classList.remove('active'); render(); };
+document.getElementById('tabDept').onclick = ()=>{ tab='dept'; document.getElementById('tabDept').classList.add('active'); document.getElementById('tabEmp').classList.remove('active'); render(); };
+loadAll();
+</script>
+</body>
+</html>

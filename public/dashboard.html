@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>儀表板 · 開發處休假表</title>
+<link rel="stylesheet" href="app.css" />
+<style>
+  .leave-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .leave-item:last-child{ border-bottom:none; }
+  .leave-item .nm{ font-weight:600; }
+  .leave-item .dp{ color:var(--muted); font-size:12px; }
+  .leave-item .sp{ flex:1; }
+  .typewrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+</style>
+</head>
+<body class="has-shell">
+<main class="app-main">
+  <div class="page-head">
+    <h1>儀表板</h1>
+    <span class="sub" id="hello"></span>
+  </div>
+
+  <div class="card" style="margin-bottom:12px;">
+    <div class="row" style="justify-content:space-between;">
+      <div class="row">
+        <button class="btn sm" id="prev">‹</button>
+        <input type="date" id="date" />
+        <button class="btn sm" id="next">›</button>
+        <button class="btn sm" id="today">今天</button>
+      </div>
+      <div class="row">
+        <span class="muted">部門</span>
+        <select id="dept"><option value="">全部</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div id="content"><div class="status">載入中…</div></div>
+</main>
+
+<script src="app.js"></script>
+<script>
+const { esc } = App;
+const PERIOD = { full:'整天', morning:'上午', afternoon:'下午' };
+let cur = new Date();
+let deptId = '';
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+
+async function loadDepts(){
+  try {
+    const r = await App.api('/api/admin/departments');
+    if (!r.ok) return;
+    const ds = await r.json();
+    const sel = document.getElementById('dept');
+    ds.forEach(d => { const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; sel.appendChild(o); });
+  } catch (_) {}
+}
+
+async function load(){
+  document.getElementById('date').value = ymd(cur);
+  const c = document.getElementById('content');
+  c.innerHTML = '<div class="status">載入中…</div>';
+  try {
+    const r = await fetch(`${App.API_BASE}/api/dashboard?date=${ymd(cur)}${deptId?`&dept=${deptId}`:''}`, { cache:'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    render(await r.json());
+  } catch (e) {
+    c.innerHTML = `<div class="status err">讀取失敗：${esc(e.message)}</div>`;
+  }
+}
+
+function render(s){
+  const hour = new Date().getHours();
+  document.getElementById('hello').textContent = `${ymd(cur)}（${'日一二三四五六'[cur.getDay()]}）`;
+
+  const types = (s.by_type||[]);
+  const typeChips = types.length
+    ? `<div class="typewrap">${types.map(t=>`<span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)} ${t.count}</span>`).join('')}</div>`
+    : '<div class="val" style="font-size:16px;color:var(--muted);margin-top:8px;">無請假</div>';
+
+  const list = (s.on_leave_list||[]);
+  const listHtml = list.length
+    ? list.map(p=>`<div class="leave-item">
+        <div><div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>${p.department?`<div class="dp">${esc(p.department)}</div>`:''}</div>
+        <div class="sp"></div>
+        <span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'?`・${PERIOD[p.period]||''}`:''}</span>
+      </div>`).join('')
+    : '<div class="empty">📅<div style="margin-top:8px;">今日無休假人員</div></div>';
+
+  document.getElementById('content').innerHTML = `
+    <div class="kpi-grid" style="margin-bottom:12px;">
+      <div class="card kpi"><div class="label">👥 應到人數</div><div class="val">${s.expected}</div></div>
+      <div class="card kpi"><div class="label">📈 出勤率</div><div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div></div>
+      <div class="card kpi"><div class="label">🗓️ 請假人數</div><div class="val">${s.on_leave_count}</div></div>
+      <div class="card kpi"><div class="label">🏷️ 假別分佈</div>${typeChips}</div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px;"><b>休假人員</b><span class="muted">${list.length} 人</span></div>
+      ${listHtml}
+    </div>`;
+}
+
+function go(delta){ cur.setDate(cur.getDate()+delta); load(); }
+document.getElementById('prev').onclick = ()=>go(-1);
+document.getElementById('next').onclick = ()=>go(1);
+document.getElementById('today').onclick = ()=>{ cur = new Date(); load(); };
+document.getElementById('date').onchange = (e)=>{ if(e.target.value){ cur = new Date(e.target.value+'T00:00:00'); load(); } };
+document.getElementById('dept').onchange = (e)=>{ deptId = e.target.value; load(); };
+
+(async()=>{ await loadDepts(); load(); })();
+</script>
+</body>
+</html>
