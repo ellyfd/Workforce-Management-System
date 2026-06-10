@@ -15,6 +15,8 @@
   .day.we{ background:var(--weekend); }
   .day.holiday{ background:var(--holiday); }
   .day .hol{ font-size:14px; line-height:1.15; color:var(--red); width:100%; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px; }
+  .day.holiday.company{ background:#dcfce7; }
+  .day.holiday.company .hol{ color:#15803d; }
   .day.picking{ outline:2px solid var(--blue); outline-offset:-2px; }
   .day.empty{ visibility:hidden; }
   .day .d{ font-size:14px; color:#374151; align-self:flex-start; }
@@ -57,6 +59,7 @@ let rangeMode = false; // 區間請假模式
 let rangeStart = null; // 區間起點 date
 let holidays = new Set(); // 假日日期（區間略過用）
 let holidayMap = {};      // 日期→假日名稱（顯示用，含國定/公司假日）
+let holidayTypes = {};    // 日期→類型（national 國定 / company 公司假）
 
 const app = document.getElementById('app');
 const api = (path, opts = {}) => fetch(API_BASE + path, {
@@ -150,8 +153,9 @@ async function loadMyLeaves(){
   try {
     const hs = await (await fetch(`${API_BASE}/api/holidays?year=${cur.getFullYear()}&names=1`, { cache:'no-store' })).json();
     holidays = new Set((hs||[]).map(h => h.date));
-    holidayMap = {}; (hs||[]).forEach(h => { holidayMap[h.date] = h.name; });
-  } catch (_) { holidays = new Set(); holidayMap = {}; }
+    holidayMap = {}; holidayTypes = {};
+    (hs||[]).forEach(h => { holidayMap[h.date] = h.name; holidayTypes[h.date] = h.type || 'national'; });
+  } catch (_) { holidays = new Set(); holidayMap = {}; holidayTypes = {}; }
 }
 // 是否為「出差」類假別（出差連週末/假日都算,不略過）
 function isBizType(typeId){ return /差/.test(labelOf(typeId)); }
@@ -214,7 +218,8 @@ function showCalendar(){
       }
     }
     const holHtml = hol ? `<div class="hol" title="${hol}">${hol}</div>` : '';
-    cells += `<div class="day${we?' we':''}${hol?' holiday':''}${halfCls}${picking}" data-date="${date}"><div class="d">${d}</div>${holHtml}${chip}</div>`;
+    const holCls = hol ? ' holiday' + (holidayTypes[date]==='company' ? ' company' : '') : '';
+    cells += `<div class="day${we?' we':''}${holCls}${halfCls}${picking}" data-date="${date}"><div class="d">${d}</div>${holHtml}${chip}</div>`;
   }
 
   app.innerHTML = `

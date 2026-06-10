@@ -95,37 +95,50 @@ async function loadHols(){
   holidays = r.ok ? await r.json() : [];
   return true;
 }
+function hoTag(type){
+  return type==='company' ? '<span class="tag green">公司假</span>' : '<span class="tag blue">國定假日</span>';
+}
 function renderHo(){
   const rows = holidays.map(h=>`
     <tr>
       <td><b>${esc(h.date)}</b> <span class="muted">${'日一二三四五六'[new Date(h.date+'T00:00:00').getDay()]}</span></td>
       <td>${esc(h.name||'')||'<span class="muted">—</span>'}</td>
-      <td class="row"><button class="iconbtn" data-del="${esc(h.id)}">刪除</button></td>
+      <td>${hoTag(h.type)}</td>
+      <td class="row"><button class="iconbtn" data-edit="${esc(h.id)}">編輯</button><button class="iconbtn" data-del="${esc(h.id)}">刪除</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px;">
-        <div class="row"><b>國定假日</b><button class="btn sm" id="py">‹</button><b>${holYear}</b><button class="btn sm" id="ny">›</button></div>
+        <div class="row"><b>假日</b><button class="btn sm" id="py">‹</button><b>${holYear}</b><button class="btn sm" id="ny">›</button></div>
         <button class="btn primary" id="add">＋ 新增假日</button>
       </div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>日期</th><th>名稱</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="3" class="empty">本年尚無假日</td></tr>'}</tbody>
+        <thead><tr><th>日期</th><th>名稱</th><th>類型</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="4" class="empty">本年尚無假日</td></tr>'}</tbody>
       </table></div>
+      <div class="muted" style="margin-top:8px;">「國定假日」＝政府公告放假日；「公司假」＝公司自訂放假日（例：員工旅遊）。兩者排休時都會自動略過。</div>
     </div>`;
   document.getElementById('py').onclick = async ()=>{ holYear--; await loadHols(); renderHo(); };
   document.getElementById('ny').onclick = async ()=>{ holYear++; await loadHols(); renderHo(); };
   document.getElementById('add').onclick = ()=>hoForm();
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>hoForm(holidays.find(x=>x.id===b.dataset.edit)));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delHo(b.dataset.del));
 }
-function hoForm(){
-  modal('新增假日', `
-    <div class="field"><label>日期</label><input id="h_date" type="date" value="${holYear}-01-01" /></div>
-    <div class="field"><label>名稱（選填）</label><input id="h_name" placeholder="例如：元旦" /></div>
+function hoForm(h){
+  const cur = h || { date:`${holYear}-01-01`, name:'', type:'national' };
+  modal(`${h?'編輯':'新增'}假日`, `
+    <div class="field"><label>日期</label><input id="h_date" type="date" value="${esc(cur.date)}" /></div>
+    <div class="field"><label>名稱（選填）</label><input id="h_name" value="${esc(cur.name||'')}" placeholder="例如：元旦、員工旅遊" /></div>
+    <div class="field"><label>類型</label><select id="h_type">
+      <option value="national"${cur.type==='company'?'':' selected'}>國定假日</option>
+      <option value="company"${cur.type==='company'?' selected':''}>公司假</option>
+    </select></div>
   `, async ()=>{
     const date = document.getElementById('h_date').value;
     if (!date){ alert('請選日期'); return false; }
-    const res = await App.adminApi('/api/admin/holidays',{method:'POST',body:JSON.stringify({date, name:document.getElementById('h_name').value.trim()||null})});
+    const body = { date, name: document.getElementById('h_name').value.trim()||null, type: document.getElementById('h_type').value };
+    const res = h ? await App.adminApi(`/api/admin/holidays/${h.id}`,{method:'PUT',body:JSON.stringify(body)})
+                  : await App.adminApi('/api/admin/holidays',{method:'POST',body:JSON.stringify(body)});
     if (!res.ok){ alert('儲存失敗'); return false; }
     holYear = Number(date.slice(0,4)); await loadHols(); renderHo(); return true;
   });
