@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>開發處休假表</title>
+<style>
+  :root {
+    --border: #e5e7eb;
+    --muted: #6b7280;
+    --bg: #f9fafb;
+    --weekend: #fef2f2;
+    --holiday: #fee2e2;
+    --today: #fef3c7;
+    --name-w: 120px;
+    --day-w: 44px;
+    --row-h: 40px;
+    --head-h: 46px;
+    --blue: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    color: #1f2937;
+    background: var(--bg);
+  }
+  .page { padding: 12px; max-width: 100%; }
+  header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  header.top h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  header.top .sub { color: var(--muted); font-size: 14px; }
+  header.top .spacer { flex: 1; }
+  header.top a.nav-link { font-size: 13px; color: var(--blue); text-decoration: none; }
+  header.top a.nav-link:hover { text-decoration: underline; }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .toolbar button {
+    font: inherit; cursor: pointer; border-radius: 8px;
+    border: 1px solid var(--border); background: #fff; padding: 6px 12px;
+  }
+  .toolbar button:hover { background: #f3f4f6; }
+  .toolbar .month-label { font-weight: 700; min-width: 110px; text-align: center; }
+  .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
+  .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #374151; }
+  .legend .dot { width: 14px; height: 14px; border-radius: 4px; }
+  .legend .note { color: var(--muted); font-size: 11px; }
+
+  .scroll {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    max-height: calc(100vh - 190px);
+    overscroll-behavior: contain;
+  }
+  table { border-collapse: separate; border-spacing: 0; width: max-content; }
+  th, td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  thead th {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg); height: var(--head-h);
+    font-size: 12px; color: #374151; font-weight: 600;
+    text-align: center; padding: 0;
+  }
+  thead th.name { left: 0; z-index: 30; text-align: left; padding-left: 10px; min-width: var(--name-w); width: var(--name-w); }
+  thead th.day { min-width: var(--day-w); width: var(--day-w); }
+  thead th.day .wd { font-size: 10px; color: var(--muted); font-weight: 400; }
+  thead th.day.weekend { color: #ef4444; background: var(--weekend); }
+  thead th.day.weekend .wd { color: #ef4444; }
+  thead th.day.holiday { color: #b91c1c; background: var(--holiday); }
+  thead th.day.holiday .wd { color: #b91c1c; }
+  thead th.day.today { background: var(--today); }
+
+  tbody td.name {
+    position: sticky; left: 0; z-index: 10;
+    background: #fff; min-width: var(--name-w); width: var(--name-w);
+    height: var(--row-h); padding: 2px 10px; text-align: left;
+    box-shadow: 2px 0 3px rgba(0,0,0,.04);
+  }
+  tbody td.name .n { font-size: 13px; font-weight: 600; line-height: 1.15; }
+  tbody td.name .c { font-size: 11px; color: var(--muted); line-height: 1.1; }
+  tbody td.day { min-width: var(--day-w); width: var(--day-w); height: var(--row-h); padding: 3px; text-align: center; }
+  tbody td.day.weekend { background: var(--weekend); }
+  tbody td.day.holiday { background: var(--holiday); }
+  tbody td.day.today { background: var(--today); }
+
+  tr.dept td {
+    position: sticky; left: 0; z-index: 12;
+    background: #eef2ff; color: #3730a3; font-weight: 700; font-size: 12px;
+    padding: 5px 10px; height: 28px; border-right: none;
+  }
+
+  /* 假別色塊：整天填滿；半天只佔一半（早休＝上半、午休＝下半），製造不同底色效果 */
+  .chip {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff;
+  }
+  td.day.half { display: flex; flex-direction: column; }
+  td.day.half .chip { height: 50%; }
+  td.day.half .chip.am { align-self: stretch; margin-bottom: auto; }
+  td.day.half .chip.pm { align-self: stretch; margin-top: auto; }
+
+  .status { padding: 24px; color: var(--muted); font-size: 14px; }
+  .err { color: #b91c1c; }
+  footer { color: var(--muted); font-size: 11px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1 id="title">開發處休假表</h1>
+    <span class="sub" id="subtitle"></span>
+    <span class="spacer"></span>
+    <a class="nav-link" href="me.html">我的排休 →</a>
+  </header>
+
+  <div class="toolbar">
+    <button id="prev">‹ 上個月</button>
+    <span class="month-label" id="monthLabel"></span>
+    <button id="next">下個月 ›</button>
+    <button class="today-btn" id="todayBtn">本月</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+  <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
+  <footer id="footer"></footer>
+</div>
+
+<script>
+/*
+ * 開發處休假表 — 全部排休（月曆總表）
+ * 資料來源：Cloudflare Worker API  GET /api/calendar?year&month
+ * 由 Worker 本身一併服務本頁（同源）；亦可用 ?api=<Worker 網址> 覆蓋。
+ */
+const params = new URLSearchParams(location.search);
+// 預設打部署好的 Worker；同源服務時這個絕對網址一樣會通，CORS 已開放。
+const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
+
+const WEEKDAY = ['日','一','二','三','四','五','六'];
+const DEFAULT_COLORS = { '休':'#22c55e','差':'#ec4899','午休':'#a855f7','病':'#f97316','員旅':'#9ca3af','早休':'#3b82f6' };
+
+// 目前顯示的年月（可由網址 ?year=&month= 指定）
+let curYear = Number(params.get('year')) || new Date().getFullYear();
+let curMonth = Number(params.get('month')) || (new Date().getMonth() + 1);
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function dateStr(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
+function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
+function todayStr(){ const t = new Date(); return dateStr(t.getFullYear(), t.getMonth()+1, t.getDate()); }
+
+function buildDays(year, month){
+  const n = daysInMonth(year, month);
+  const out = [];
+  for (let d = 1; d <= n; d++){
+    const dow = new Date(year, month-1, d).getDay();
+    out.push({ d, date: dateStr(year, month, d), wd: WEEKDAY[dow], weekend: dow===0||dow===6 });
+  }
+  return out;
+}
+
+function colorFor(label, legend){
+  if (legend && legend[label]) return legend[label];
+  return DEFAULT_COLORS[label] || '#64748b';
+}
+
+// 由假別文字判斷是否為半天（早＝上午、午＝下午），決定色塊占滿或只占一半。
+function periodOf(label){
+  if (/早/.test(label)) return 'am';
+  if (/午/.test(label)) return 'pm';
+  return 'full';
+}
+
+function render(data){
+  const year = data.year, month = data.month;
+  const days = buildDays(year, month);
+  const holidays = new Set(data.holidays || []);
+  const legend = (data.legend && Object.keys(data.legend).length) ? data.legend : DEFAULT_COLORS;
+  const today = todayStr();
+
+  document.getElementById('title').textContent = data.title || '開發處休假表';
+  document.getElementById('subtitle').textContent = `${year} 年 ${month} 月`;
+  document.getElementById('monthLabel').textContent = `${year} 年 ${month} 月`;
+
+  // 圖例
+  const leg = document.getElementById('legend');
+  leg.innerHTML = '';
+  Object.entries(legend).forEach(([label,color])=>{
+    const el = document.createElement('span');
+    el.className = 'item';
+    el.innerHTML = `<span class="dot" style="background:${color}"></span>${label}`;
+    leg.appendChild(el);
+  });
+  const note = document.createElement('span');
+  note.className = 'note';
+  note.textContent = '・半天假以半格顯示（早休＝上半、午休＝下半）';
+  leg.appendChild(note);
+
+  // 表頭
+  const table = document.getElementById('table');
+  let html = '<thead><tr><th class="name">姓名</th>';
+  days.forEach(day=>{
+    const isHol = holidays.has(day.date);
+    const cls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
+    const todayCls = day.date === today ? ' today' : '';
+    html += `<th class="day ${cls}${todayCls}"><div>${day.d}</div><div class="wd">${day.wd}</div></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // 內容（依部門分組）
+  const colCount = days.length + 1;
+  const depts = data.departments || [];
+  let anyMember = false;
+  depts.forEach(dept=>{
+    html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
+    (dept.members || []).forEach(m=>{
+      anyMember = true;
+      html += `<tr><td class="name"><div class="n">${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
+      days.forEach(day=>{
+        const isHol = holidays.has(day.date);
+        const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
+        const todayCls = day.date === today ? ' today' : '';
+        const mark = m.leaves ? m.leaves[day.date] : null;
+        if (mark){
+          const p = periodOf(mark);
+          if (p === 'full') {
+            html += `<td class="day ${baseCls}${todayCls}"><div class="chip" style="background:${colorFor(mark,legend)}">${mark}</div></td>`;
+          } else {
+            html += `<td class="day ${baseCls}${todayCls} half"><div class="chip ${p}" style="background:${colorFor(mark,legend)}">${mark}</div></td>`;
+          }
+        } else {
+          html += `<td class="day ${baseCls}${todayCls}"></td>`;
+        }
+      });
+      html += '</tr>';
+    });
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+
+  const status = document.getElementById('status');
+  if (!anyMember){
+    status.className = 'status';
+    status.textContent = '本月查無人員或休假資料。';
+    status.style.display = '';
+    table.style.display = 'none';
+  } else {
+    status.style.display = 'none';
+    table.style.display = '';
+  }
+
+  const foot = document.getElementById('footer');
+  foot.textContent = data.updated_at
+    ? `資料更新時間：${new Date(data.updated_at).toLocaleString('zh-TW')}`
+    : '';
+}
+
+async function load(){
+  const status = document.getElementById('status');
+  status.className = 'status';
+  status.textContent = '載入中…';
+  status.style.display = '';
+  document.getElementById('table').style.display = 'none';
+  try {
+    const res = await fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    render(data);
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `讀取資料失敗：${e.message}（API：${API_BASE}/api/calendar）`;
+  }
+}
+
+function go(deltaMonths){
+  const d = new Date(curYear, curMonth - 1 + deltaMonths, 1);
+  curYear = d.getFullYear();
+  curMonth = d.getMonth() + 1;
+  load();
+}
+
+document.getElementById('prev').onclick = () => go(-1);
+document.getElementById('next').onclick = () => go(1);
+document.getElementById('todayBtn').onclick = () => {
+  const t = new Date();
+  curYear = t.getFullYear(); curMonth = t.getMonth() + 1;
+  load();
+};
+
+load();
+</script>
+</body>
+</html>
