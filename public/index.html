@@ -85,6 +85,8 @@
   tbody td.day.weekend { background: var(--weekend); }
   tbody td.day.holiday { background: var(--holiday); }
   tbody td.day.today { background: var(--today); }
+  tbody td.day[data-emp] { cursor: pointer; }
+  tbody td.day.picking { outline: 2px solid var(--blue); outline-offset: -2px; }
 
   tr.dept td {
     position: sticky; left: 0; z-index: 12;
@@ -121,6 +123,13 @@
     <button class="today-btn" id="todayBtn">本月</button>
   </div>
 
+  <div class="toolbar">
+    <span class="muted">編輯：</span>
+    <select id="ltype"><option value="">選擇假別…</option></select>
+    <button id="rangeBtn">🗓️ 區間</button>
+    <span class="muted" id="editHint">選假別後點格子＝填入；雙擊格子＝取消</span>
+  </div>
+
   <div class="legend" id="legend"></div>
   <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
   <footer id="footer"></footer>
@@ -136,7 +145,7 @@
 const params = new URLSearchParams(location.search);
 // 預設打部署好的 Worker；同源服務時這個絕對網址一樣會通，CORS 已開放。
 const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
-// DPC（3D team）即時資料：由 GitHub Action 從 Base44 同步成 public/dpc.json，與 D1 資料合併顯示。
+// DPC 過渡資料：排程產生的 public/dpc.json，D1 尚無資料時暫時合併顯示。
 const DPC_URL = params.get('dpc') || './dpc.json';
 
 const WEEKDAY = ['日','一','二','三','四','五','六'];
@@ -145,6 +154,18 @@ const DEFAULT_COLORS = { '休':'#22c55e','差':'#ec4899','午休':'#a855f7','病
 // 目前顯示的年月（可由網址 ?year=&month= 指定）
 let curYear = Number(params.get('year')) || new Date().getFullYear();
 let curMonth = Number(params.get('month')) || (new Date().getMonth() + 1);
+
+// 編輯狀態
+let leaveTypes = [];
+let EMP = {};              // empId -> { name, leaves }
+let HOLIDAYS = new Set();
+let selType = '';          // 選的假別 id
+let rangeMode = false, rangeEmp = null, rangeStart = null;
+let editingInit = false;
+
+function periodOfType(id){ const t=leaveTypes.find(x=>x.id===id); const s=t?(t.short_name||t.name||''):''; if(/早/.test(s))return 'morning'; if(/午/.test(s))return 'afternoon'; return 'full'; }
+function isBizType(id){ const t=leaveTypes.find(x=>x.id===id); return /差/.test(t?(t.short_name||t.name||''):''); }
+function dstr(d){ return dateStr(d.getFullYear(), d.getMonth()+1, d.getDate()); }
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function dateStr(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
@@ -166,7 +187,7 @@ function colorFor(label, legend){
   return DEFAULT_COLORS[label] || '#64748b';
 }
 
-// 把 Base44 即時同步的 DPC 區塊合併進 D1 來的資料：
+// 把過渡用的 DPC 區塊合併進 D1 來的資料：
 // 取代同名(3D team（DPC）)部門、補進 DPC 的假別色與國定假日。
 function mergeDpc(base, dpc){
   if (!dpc) return base;
@@ -200,6 +221,7 @@ function resolveCell(lv, legend){
 }
 
 function render(data){
+  LAST = data;
   const year = data.year, month = data.month;
   const days = buildDays(year, month);
   const holidays = new Set(data.holidays || []);
@@ -235,7 +257,9 @@ function render(data){
   });
   html += '</tr></thead><tbody>';
 
-  // 內容（依部門分組）
+  // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
+  HOLIDAYS = holidays;
+  EMP = {};
   const colCount = days.length + 1;
   const depts = data.departments || [];
   let anyMember = false;
@@ -243,20 +267,21 @@ function render(data){
     html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
     (dept.members || []).forEach(m=>{
       anyMember = true;
+      if (m.id) EMP[m.id] = { name: m.name, leaves: m.leaves || {} };
+      const empAttr = m.id ? ` data-emp="${m.id}"` : '';
       html += `<tr><td class="name"><div class="n">${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
       days.forEach(day=>{
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
         const todayCls = day.date === today ? ' today' : '';
+        const pick = (rangeMode && rangeEmp===m.id && rangeStart===day.date) ? ' picking' : '';
         const cell = resolveCell(m.leaves ? m.leaves[day.date] : null, legend);
         if (cell){
-          if (cell.p === 'full') {
-            html += `<td class="day ${baseCls}${todayCls}"><div class="chip" style="background:${cell.color}">${cell.label}</div></td>`;
-          } else {
-            html += `<td class="day ${baseCls}${todayCls} half"><div class="chip ${cell.p}" style="background:${cell.color}">${cell.label}</div></td>`;
-          }
+          const halfCls = cell.p === 'full' ? '' : ' half';
+          const chipCls = cell.p === 'full' ? 'chip' : `chip ${cell.p}`;
+          html += `<td class="day ${baseCls}${todayCls}${halfCls}${pick}"${empAttr} data-date="${day.date}"><div class="${chipCls}" style="background:${cell.color}">${cell.label}</div></td>`;
         } else {
-          html += `<td class="day ${baseCls}${todayCls}"></td>`;
+          html += `<td class="day ${baseCls}${todayCls}${pick}"${empAttr} data-date="${day.date}"></td>`;
         }
       });
       html += '</tr>';
@@ -282,19 +307,111 @@ function render(data){
     : '';
 }
 
+// ── 編輯：選假別 + 單擊填入 / 雙擊取消 / 區間請假（改任一員工）─────────
+async function initEditing(){
+  if (editingInit) return;
+  editingInit = true;
+  try { leaveTypes = await (await fetch(`${API_BASE}/api/leave-types`, { cache:'no-store' })).json(); } catch (_) { leaveTypes = []; }
+  const sel = document.getElementById('ltype');
+  sel.innerHTML = '<option value="">選擇假別…</option>' + leaveTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+  sel.onchange = (e)=>{ selType = e.target.value; };
+  const rb = document.getElementById('rangeBtn');
+  rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
+  const table = document.getElementById('table');
+  table.addEventListener('click', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
+  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCellDbl(td.dataset.emp, td.dataset.date); });
+}
+
+function onCell(empId, date){
+  const emp = EMP[empId]; if (!emp) return;
+  const has = emp.leaves && emp.leaves[date];
+  if (rangeMode){
+    if (!selType){ alert('請先選擇假別'); return; }
+    if (!rangeStart || rangeEmp !== empId){ rangeEmp = empId; rangeStart = date; render(LAST); return; }
+    const a = rangeStart < date ? rangeStart : date, b = rangeStart < date ? date : rangeStart;
+    const who = rangeEmp; rangeStart = null; rangeEmp = null;
+    fillRangeRow(who, a, b, selType);
+    return;
+  }
+  if (!has){ if (!selType){ alert('請先從上方「選擇假別」'); return; } fillCell(empId, date, selType); }
+}
+function onCellDbl(empId, date){
+  const emp = EMP[empId]; if (!emp || !(emp.leaves && emp.leaves[date])) return;
+  const run = buildRun(empId, date);
+  if (run){
+    const whole = confirm(`這是一段連續 ${run.length} 天的假。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
+    delByDate(empId, whole ? run : [date]);
+  } else if (confirm('取消這格的請假？')) {
+    delByDate(empId, [date]);
+  }
+}
+function buildRun(empId, date){
+  const lv = EMP[empId].leaves; const here = lv[date]; if (!here) return null;
+  const lab = here.label; const has = (s)=> lv[s] && lv[s].label === lab;
+  const dates = [date];
+  let d = new Date(date+'T00:00:00');
+  while (true){ d.setDate(d.getDate()-1); const s = dstr(d); if (has(s)) dates.unshift(s); else break; }
+  d = new Date(date+'T00:00:00');
+  while (true){ d.setDate(d.getDate()+1); const s = dstr(d); if (has(s)) dates.push(s); else break; }
+  return dates.length > 1 ? dates : null;
+}
+async function warnFor(empId, dates, type){
+  if (isBizType(type) || !dates.length) return [];
+  try {
+    const r = await fetch(`${API_BASE}/api/leave-check?employee_id=${encodeURIComponent(empId)}&dates=${dates.join(',')}`, { cache:'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json(); const msgs = [];
+    for (const dd of dates){ const w = data.results[dd]; if (!w) continue;
+      if (w.deputies && w.deputies.length) msgs.push(`${dd}：職代 ${w.deputies.join('、')} 當天也請假`);
+      if (w.over) msgs.push(`${dd}：部門當天請假已達 1/3（已 ${w.dept_count} 人）`);
+    }
+    return msgs;
+  } catch (_) { return []; }
+}
+async function fillCell(empId, date, type){
+  const w = await warnFor(empId, [date], type);
+  if (w.length && !confirm(`⚠️ ${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要請假嗎？')) return;
+  const r = await App.adminApi('/api/admin/leaves', { method:'POST', body: JSON.stringify({ employee_id: empId, date, leave_type_id: type, period: periodOfType(type) }) });
+  if (!r.ok){ alert('填入失敗（可能需要管理密鑰）'); return; }
+  load();
+}
+async function delByDate(empId, dates){
+  const r = await App.adminApi('/api/admin/leaves/delete-by-date', { method:'POST', body: JSON.stringify({ employee_id: empId, dates }) });
+  if (!r.ok){ alert('刪除失敗'); return; }
+  load();
+}
+async function fillRangeRow(empId, a, b, type){
+  const biz = isBizType(type); const items = [];
+  const d = new Date(a+'T00:00:00'), end = new Date(b+'T00:00:00');
+  for (; d <= end; d.setDate(d.getDate()+1)){
+    const dow = d.getDay(); const date = dstr(d);
+    if (!biz && (dow===0 || dow===6 || HOLIDAYS.has(date))) continue;
+    items.push({ date, leave_type_id: type, period: periodOfType(type) });
+  }
+  if (!items.length){ alert('此區間內沒有可請假的日子（週末/假日已略過）。'); render(LAST); return; }
+  const w = await warnFor(empId, items.map(i=>i.date), type);
+  if (w.length && !confirm(`⚠️ ${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要送出區間請假嗎？')){ render(LAST); return; }
+  const r = await App.adminApi('/api/admin/leaves/bulk', { method:'POST', body: JSON.stringify({ employee_id: empId, items }) });
+  if (!r.ok){ alert('區間請假失敗'); return; }
+  load();
+}
+
+let LAST = null; // 最近一次 render 用的資料（區間高亮重繪用）
+
 async function load(){
   const status = document.getElementById('status');
   status.className = 'status';
   status.textContent = '載入中…';
   status.style.display = '';
   document.getElementById('table').style.display = 'none';
+  await initEditing();
   try {
     const res = await fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
 
-    // D1 已經有 DPC（已由 Worker 從 Base44 同步進來）→ 直接用 D1。
+    // D1 已經有 DPC（已由 Worker 同步進來）→ 直接用 D1。
     // 還沒有（尚未部署/同步）→ 暫時合併靜態 dpc.json 當過渡，讓畫面先有資料。
     const hasDpcInD1 = (data.departments || []).some((d) => /DPC/i.test(d.name || ''));
     if (hasDpcInD1) {
