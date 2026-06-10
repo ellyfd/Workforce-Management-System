@@ -16,13 +16,13 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
               └─ /api/*       → index.js（API）
                                   └─→ D1 資料庫 dpc-hub
                                         ↑
-   Base44（DPC 真相來源）──→ Worker 同步（Cron 每 30 分鐘 + 手動 /api/sync）──┘
+   Base44（DPC 真相來源）──→ Worker 同步（每天 8 點 Cron + 手動 /api/sync）──┘
 ```
 
 ### 資料來源：Base44 → D1（單向同步）
 
 - **Base44 是 DPC 的真相來源**。Worker 會把 Base44 的 DPC 部門**單向**同步進 D1:
-  - **定時**:Cron 每 30 分鐘自動跑(`wrangler.toml` 的 `[triggers]`)。
+  - **定時**:Cron 每天台北早上 8 點自動跑(`wrangler.toml` 的 `[triggers]`,UTC 00:00)。
   - **手動**:設定管理頁(`/settings`)按「立即同步」,或 `POST /api/sync`(帶 `X-Sync-Secret`)。
 - 同步**只動 DPC 部門**的 department/employees/leave_records;`leave_types`、`holidays`
   為全域參考資料一併更新;**保留每位員工的 `device_token`**(me.html 綁定用)。
