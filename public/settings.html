@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>設定管理 · DPC 同步</title>
+<title>DPC 同步 · 開發處休假表</title>
+<link rel="stylesheet" href="app.css" />
 <style>
   :root{ --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; --blue:#2563eb; --green:#16a34a; --red:#dc2626; }
   *{ box-sizing:border-box; }
@@ -32,13 +33,10 @@
   footer{ color:var(--muted); font-size:11px; margin-top:12px; text-align:center; }
 </style>
 </head>
-<body>
+<body class="has-shell">
 <div class="page">
   <div class="top">
-    <h1>設定管理</h1>
-    <span class="spacer"></span>
-    <a class="nav-link" href="index.html">全部排休</a>
-    <a class="nav-link" href="manage.html">休假管理</a>
+    <h1>DPC 同步</h1>
   </div>
   <div class="muted">DPC 資料以 Base44 為真相來源,定時(每 30 分鐘)自動同步進系統;也可在此手動立即同步。</div>
 
@@ -59,6 +57,7 @@
   <footer id="footer"></footer>
 </div>
 
+<script src="app.js"></script>
 <script>
 const API_BASE = (new URLSearchParams(location.search).get('api')
   || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');

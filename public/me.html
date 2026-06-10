@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>我的排休</title>
+<title>我的排休 · 開發處休假表</title>
+<link rel="stylesheet" href="app.css" />
 <style>
   :root{ --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; --weekend:#fef2f2; --blue:#2563eb; }
   *{ box-sizing:border-box; }
@@ -34,12 +35,13 @@
   footer{ color:var(--muted); font-size:11px; margin-top:10px; text-align:center; }
 </style>
 </head>
-<body>
+<body class="has-shell">
 <div class="page">
   <div id="app"><div class="status">載入中…</div></div>
   <footer id="footer"></footer>
 </div>
 
+<script src="app.js"></script>
 <script>
 // 由 Worker 一併服務本頁（同源）；可用 ?api=<Worker 網址> 覆蓋。
 const API_BASE = (new URLSearchParams(location.search).get('api')

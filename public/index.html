@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>開發處休假表</title>
+<title>全部排休 · 開發處休假表</title>
+<link rel="stylesheet" href="app.css" />
 <style>
   :root {
     --border: #e5e7eb;
@@ -106,16 +107,11 @@
   footer { color: var(--muted); font-size: 11px; margin-top: 8px; }
 </style>
 </head>
-<body>
+<body class="has-shell">
 <div class="page">
   <header class="top">
-    <h1 id="title">開發處休假表</h1>
+    <h1 id="title">全部排休</h1>
     <span class="sub" id="subtitle"></span>
-    <span class="spacer"></span>
-    <a class="nav-link" href="me.html">我的排休</a>
-    <a class="nav-link" href="stats.html">統計</a>
-    <a class="nav-link" href="manage.html">管理</a>
-    <a class="nav-link" href="settings.html">設定</a>
   </header>
 
   <div class="toolbar">
@@ -130,6 +126,7 @@
   <footer id="footer"></footer>
 </div>
 
+<script src="app.js"></script>
 <script>
 /*
  * 開發處休假表 — 全部排休（月曆總表）
@@ -209,8 +206,8 @@ function render(data){
   const legend = (data.legend && Object.keys(data.legend).length) ? data.legend : DEFAULT_COLORS;
   const today = todayStr();
 
-  document.getElementById('title').textContent = data.title || '開發處休假表';
-  document.getElementById('subtitle').textContent = `${year} 年 ${month} 月`;
+  document.getElementById('title').textContent = '全部排休';
+  document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${year} 年 ${month} 月`;
   document.getElementById('monthLabel').textContent = `${year} 年 ${month} 月`;
 
   // 圖例
