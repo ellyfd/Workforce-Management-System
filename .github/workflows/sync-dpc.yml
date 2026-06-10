@@ -1,0 +1,47 @@
+name: Sync DPC leave
+
+# 定時把 Base44 的 DPC 休假同步成 dpc.json（GitHub Pages 隨即更新）。
+# GitHub 排程最短約每 5 分鐘、且可能延遲；這裡用每 10 分鐘，可自行調整。
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {} # 也可在 Actions 頁面手動觸發
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-dpc
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 產生 dpc.json
+        env:
+          BASE44_API_KEY: ${{ secrets.BASE44_API_KEY }}
+          # 以下非機密，可留預設或在這裡覆蓋：
+          # BASE44_API_URL: https://app-67c8f9d9.base44.app/api
+          # BASE44_APP_ID: 693bb4665c3a400767c8f9d9
+          # DPC_DEPT_NAME: DPC
+          # DPC_DISPLAY_NAME: 3D team（DPC）
+        run: node scripts/build-dpc.mjs
+
+      - name: 有變動才提交
+        run: |
+          if [[ -n "$(git status --porcelain dpc.json)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add dpc.json
+            git commit -m "chore: sync DPC leave $(date -u +%FT%TZ)"
+            git push
+          else
+            echo "DPC 資料無變動，略過提交"
+          fi
