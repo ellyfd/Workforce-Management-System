@@ -26,6 +26,12 @@
   .day.empty{ visibility:hidden; }
   .day .d{ font-size:12px; color:#374151; align-self:flex-start; }
   .day .chip{ margin-top:auto; margin-bottom:auto; width:100%; border-radius:6px; color:#fff; font-size:12px; font-weight:600; text-align:center; padding:3px 0; }
+  .day.half{ justify-content:flex-start; }
+  .day .chip.am{ margin-top:2px; margin-bottom:auto; }
+  .day .chip.pm{ margin-top:auto; margin-bottom:2px; }
+  .summary{ display:flex; flex-wrap:wrap; gap:10px 14px; padding:8px 0; }
+  .sumitem{ display:inline-flex; align-items:center; gap:5px; font-size:13px; color:#374151; }
+  .sumitem .dot{ width:12px; height:12px; border-radius:4px; display:inline-block; }
   .list{ display:flex; flex-direction:column; gap:6px; }
   .emp{ padding:9px 12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; }
   .emp:hover{ background:#f3f4f6; }
@@ -118,8 +124,17 @@ async function bind(employeeId){
 async function loadMyLeaves(){
   const recs = await (await api(`/api/my-leaves?year=${cur.getFullYear()}`)).json();
   myLeaves = {};
-  for (const r of recs) myLeaves[r.date] = { id: r.id, leave_type_id: r.leave_type_id };
+  for (const r of recs) myLeaves[r.date] = { id: r.id, leave_type_id: r.leave_type_id, period: r.period || 'full' };
 }
+
+// 由假別簡稱推時段：早→上午、午→下午、否則整天。
+function periodOfType(typeId){
+  const s = labelOf(typeId);
+  if (/早/.test(s)) return 'morning';
+  if (/午/.test(s)) return 'afternoon';
+  return 'full';
+}
+function leaveDays(period){ return period==='morning'||period==='afternoon' ? 0.5 : 1; }
 
 function showCalendar(){
   const y = cur.getFullYear(), m = cur.getMonth() + 1;
@@ -127,6 +142,20 @@ function showCalendar(){
   const days = new Date(y, m, 0).getDate();
 
   const opts = leaveTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+  // 本月假別小計（天數，半天計 0.5）
+  const monthPrefix = `${y}-${String(m).padStart(2,'0')}`;
+  const sumByType = {};
+  for (const [date, lv] of Object.entries(myLeaves)){
+    if (!date.startsWith(monthPrefix)) continue;
+    sumByType[lv.leave_type_id] = (sumByType[lv.leave_type_id]||0) + leaveDays(lv.period);
+  }
+  const summary = Object.entries(sumByType).map(([tid,days])=>
+    `<span class="sumitem"><span class="dot" style="background:${colorOf(tid)}"></span>${labelOf(tid)} ${days} 天</span>`).join('');
+
+  // 假別圖例
+  const legend = leaveTypes.map(t=>`<span class="sumitem"><span class="dot" style="background:${t.color||'#64748b'}"></span>${t.short_name||t.name} = ${t.name}</span>`).join('');
+
   let cells = '';
   for (let i=0;i<first;i++) cells += `<div class="day empty"></div>`;
   for (let d=1; d<=days; d++){
@@ -134,27 +163,41 @@ function showCalendar(){
     const dow = new Date(y, m-1, d).getDay();
     const we = dow===0 || dow===6;
     const lv = myLeaves[date];
-    const chip = lv ? `<div class="chip" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>` : '';
-    cells += `<div class="day${we?' we':''}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
+    const half = lv && (lv.period==='morning'||lv.period==='afternoon') ? (lv.period==='morning'?' am':' pm') : '';
+    const chip = lv ? `<div class="chip${half}" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>` : '';
+    cells += `<div class="day${we?' we':''}${half?' half':''}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
   }
 
   app.innerHTML = `
     <div class="row" style="justify-content:space-between;">
       <div><h1>我的排休</h1><div class="muted">${me.name}${me.english_name?`（${me.english_name}）`:''}</div></div>
-      <div class="row" style="gap:12px;"><a class="link" href="index.html">← 全部排休</a><button class="link" id="logout">切換身分</button></div>
+      <button class="link" id="logout">切換身分</button>
     </div>
     <div class="card">
-      <div class="row"><span class="muted">假別：</span><div style="flex:1;min-width:160px;"><select id="ltype">${opts}</select></div></div>
       <div class="nav">
         <button id="prev">‹ 上個月</button>
         <b>${y} 年 ${m} 月</b>
         <button id="next">下個月 ›</button>
       </div>
+      ${summary ? `<div class="summary">${summary}</div>` : '<div class="muted" style="font-size:12px;">本月尚無休假</div>'}
+      <div class="row" style="margin:10px 0;"><span class="muted">假別：</span><div style="flex:1;min-width:160px;"><select id="ltype">${opts}</select></div></div>
       <div class="cal">
         ${WEEKDAY.map((w,i)=>`<div class="wd${i===0||i===6?' we':''}">${w}</div>`).join('')}
         ${cells}
       </div>
-      <div class="muted" style="margin-top:10px;">點日期＝用上方假別請假；再點一次＝取消。</div>
+      <div class="muted" style="margin-top:10px;">點日期＝用上方假別請假；再點一次＝取消。午休/早休會自動算半天。</div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <details>
+        <summary style="cursor:pointer;font-weight:600;">操作說明與假別圖例</summary>
+        <ul class="muted" style="margin:10px 0;padding-left:18px;line-height:1.7;font-size:13px;">
+          <li><b>填入請假</b>：先從上方選擇假別，再點日曆中的日期即可填入。</li>
+          <li><b>取消請假</b>：再點一次已填入的格子即可取消。</li>
+          <li><b>半天假</b>：選「下午休 / 上午休」會以半格顯示、自動計 0.5 天。</li>
+        </ul>
+        <div style="font-weight:600;margin:6px 0;">假別圖例</div>
+        <div class="summary">${legend}</div>
+      </details>
     </div>`;
 
   document.getElementById('logout').onclick = () => { localStorage.removeItem('dev_device_token'); location.reload(); };
@@ -172,7 +215,7 @@ async function toggleDay(date){
       await api(`/api/my-leaves/${lv.id}`, { method:'DELETE' });
     } else {
       const leave_type_id = document.getElementById('ltype').value;
-      await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id }) });
+      await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id, period: periodOfType(leave_type_id) }) });
     }
     await loadMyLeaves();
     showCalendar();

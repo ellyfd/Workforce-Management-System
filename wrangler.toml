@@ -12,9 +12,10 @@ binding = "DB"
 database_name = "dpc-hub"
 database_id = "33f69061-a17d-431d-8105-343cadd695dc"
 
-# DPC 同步：定時把 Base44 的 DPC 資料灌進 D1（每 30 分鐘）。
+# DPC 同步：每天台北早上 8 點自動跑（Cloudflare cron 用 UTC，台北 08:00 = UTC 00:00）。
+# 出錯時可到設定管理頁按「立即同步」手動重跑。
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["0 0 * * *"]
 
 # 非機密設定（機密用 wrangler secret put 設定，勿寫在這裡）：
 #   BASE44_API_KEY  從 Base44 讀資料用

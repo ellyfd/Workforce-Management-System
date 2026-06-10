@@ -472,7 +472,8 @@ async function syncFromBase44(env) {
   if (!dpcDept) throw new Error(`在 Base44 找不到部門「${deptName}」`);
 
   const emps = employeesAll
-    .filter((e) => (e.department_ids || []).includes(dpcDept.id) && !['inactive', 'parental_leave', 'hidden'].includes(e.status))
+    // 排除離職/隱藏；保留育嬰假（仍顯示於人員管理，但月曆只取 active）
+    .filter((e) => (e.department_ids || []).includes(dpcDept.id) && !['inactive', 'hidden'].includes(e.status))
     .sort((a, b) => (a.sort_order_by_dept?.[dpcDept.id] ?? 9e9) - (b.sort_order_by_dept?.[dpcDept.id] ?? 9e9));
   const dpcEmpIds = new Set(emps.map((e) => e.id));
   const ltById = Object.fromEntries(leaveTypes.map((t) => [t.id, t]));
