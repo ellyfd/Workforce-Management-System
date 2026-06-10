@@ -106,13 +106,14 @@ export default {
         return json(r.results);
       }
 
-      // 公開假日清單（前端區間請假用來略過國定假日）
+      // 公開假日清單（前端區間請假用來略過國定假日；?names=1 連名稱一起回）
       if (pathname === '/api/holidays' && method === 'GET') {
         const year = url.searchParams.get('year');
         let q = 'SELECT date, name FROM holidays';
         const binds = [];
         if (year) { q += ' WHERE date >= ? AND date <= ?'; binds.push(`${year}-01-01`, `${year}-12-31`); }
         const r = await env.DB.prepare(q).bind(...binds).all();
+        if (url.searchParams.get('names')) return json(r.results);
         return json(r.results.map((h) => h.date));
       }
 

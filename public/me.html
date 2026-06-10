@@ -23,6 +23,8 @@
   .cal .wd.we{ color:#ef4444; }
   .day{ aspect-ratio:1/1; border:1px solid var(--border); border-radius:8px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; background:#fff; position:relative; }
   .day.we{ background:var(--weekend); }
+  .day.holiday{ background:var(--holiday); }
+  .day .hol{ font-size:9px; line-height:1.15; color:var(--red); width:100%; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px; }
   .day.picking{ outline:2px solid var(--blue); outline-offset:-2px; }
   .day.empty{ visibility:hidden; }
   .day .d{ font-size:12px; color:#374151; align-self:flex-start; }
@@ -67,7 +69,8 @@ let myLeaves = {};    // { 'YYYY-MM-DD': {id, leave_type_id, period} }
 let selType = '';     // 目前選的假別 id（''＝尚未選）
 let rangeMode = false; // 區間請假模式
 let rangeStart = null; // 區間起點 date
-let holidays = new Set(); // 國定假日（區間略過用）
+let holidays = new Set(); // 假日日期（區間略過用）
+let holidayMap = {};      // 日期→假日名稱（顯示用，含國定/公司假日）
 
 const app = document.getElementById('app');
 const api = (path, opts = {}) => fetch(API_BASE + path, {
@@ -157,11 +160,12 @@ async function loadMyLeaves(){
     const slot = r.period==='morning' ? 'am' : r.period==='afternoon' ? 'pm' : 'full';
     (myLeaves[r.date] ||= {})[slot] = { id: r.id, leave_type_id: r.leave_type_id, period: r.period || 'full' };
   }
-  // 載入該年國定假日（區間請假用來略過）
+  // 載入該年假日（國定 + 公司假日如員工旅遊）：顯示用 + 區間略過用
   try {
-    const hs = await (await fetch(`${API_BASE}/api/holidays?year=${cur.getFullYear()}`, { cache:'no-store' })).json();
-    holidays = new Set(Array.isArray(hs) ? hs : []);
-  } catch (_) { holidays = new Set(); }
+    const hs = await (await fetch(`${API_BASE}/api/holidays?year=${cur.getFullYear()}&names=1`, { cache:'no-store' })).json();
+    holidays = new Set((hs||[]).map(h => h.date));
+    holidayMap = {}; (hs||[]).forEach(h => { holidayMap[h.date] = h.name; });
+  } catch (_) { holidays = new Set(); holidayMap = {}; }
 }
 // 是否為「出差」類假別（出差連週末/假日都算,不略過）
 function isBizType(typeId){ return /差/.test(labelOf(typeId)); }
@@ -202,6 +206,7 @@ function showCalendar(){
     const dow = new Date(y, m-1, d).getDay();
     const we = dow===0 || dow===6;
     const slots = myLeaves[date];
+    const hol = holidayMap[date];
     const picking = (rangeStart===date) ? ' picking' : '';
     let chip = '', halfCls = '';
     if (slots){
@@ -213,7 +218,8 @@ function showCalendar(){
         chip = `<div class="chip" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>`;
       }
     }
-    cells += `<div class="day${we?' we':''}${halfCls}${picking}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
+    const holHtml = hol ? `<div class="hol" title="${hol}">${hol}</div>` : '';
+    cells += `<div class="day${we?' we':''}${hol?' holiday':''}${halfCls}${picking}" data-date="${date}"><div class="d">${d}</div>${holHtml}${chip}</div>`;
   }
 
   app.innerHTML = `
@@ -277,7 +283,7 @@ function onCell(date){
     fillRange(a, b, selType);
     return;
   }
-  if (!selType){ alert('請先從上方「選擇假別」'); return; }
+  if (!selType){ if (slots) return; alert('請先從上方「選擇假別」'); return; } // 已有假→不提示,雙擊取消
   const slot = slotOf(periodOfType(selType));
   if (slots && slots[slot]) return; // 該時段已有→不重複(取消請雙擊)
   addLeave(date, selType);
