@@ -66,7 +66,7 @@ function renderEmp(){
       <td><b>${esc(e.name)}</b>${e.english_name?` <span class="muted">${esc(e.english_name)}</span>`:''}</td>
       <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
       <td>${dep?esc(dep):'<span class="muted">—</span>'}</td>
-      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span></td>
+      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span>${e.role==='admin'?' <span class="tag blue">管理員</span>':''}</td>
       <td class="row"><button class="iconbtn" data-edit="${esc(e.id)}">編輯</button><button class="iconbtn" data-del="${esc(e.id)}">刪除</button></td>
     </tr>`;
   }).join('');
@@ -125,8 +125,11 @@ function empForm(e){
     <div class="field"><label>部門</label><div class="checks" id="f_depts">${checks||'<span class="muted">尚無部門</span>'}</div></div>
     <div class="field"><label>第一順位職代</label><select id="f_dep1"></select></div>
     <div class="field"><label>第二順位職代</label><select id="f_dep2"></select></div>
-    <div class="field"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
-    <div class="muted" style="font-size:12px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。</div>
+    <div class="row" style="gap:10px;">
+      <div class="field" style="flex:1;"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
+      <div class="field" style="flex:1;"><label>角色</label><select id="f_role"><option value="user"${cur.role!=='admin'?' selected':''}>一般</option><option value="admin"${cur.role==='admin'?' selected':''}>管理員</option></select></div>
+    </div>
+    <div class="muted" style="font-size:12px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。管理員才能進設定管理與編輯排休。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if (!name){ alert('請輸入姓名'); return false; }
@@ -137,6 +140,7 @@ function empForm(e){
       deputy_1: document.getElementById('f_dep1').value || null,
       deputy_2: document.getElementById('f_dep2').value || null,
       status: document.getElementById('f_status').value,
+      role: document.getElementById('f_role').value,
     };
     const res = e ? await App.adminApi(`/api/admin/employees/${e.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify(body)});
