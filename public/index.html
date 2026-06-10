@@ -87,6 +87,13 @@
   tbody td.day.today { background: var(--today); }
   tbody td.day[data-emp] { cursor: pointer; }
   tbody td.day.picking { outline: 2px solid var(--blue); outline-offset: -2px; }
+  thead th.day.hl, tbody td.day.hl { background: #e0e7ff; }
+  thead th.day.mstart, tbody td.day.mstart { border-left: 2px solid #c7d2fe; }
+  thead th.day { cursor: default; }
+  thead th.day .mtag { font-size: 9px; color: var(--blue); font-weight: 700; line-height: 1; }
+  tr.emprow.dragging { opacity: .45; }
+  tr.emprow.dragover td.name { box-shadow: inset 0 3px 0 var(--blue), 2px 0 3px rgba(0,0,0,.04); }
+  td.name .grip { cursor: grab; color: var(--muted); }
 
   tr.dept td {
     position: sticky; left: 0; z-index: 12;
@@ -117,10 +124,11 @@
   </header>
 
   <div class="toolbar">
-    <button id="prev">‹ 上個月</button>
+    <button id="prev">‹</button>
     <span class="month-label" id="monthLabel"></span>
-    <button id="next">下個月 ›</button>
-    <button class="today-btn" id="todayBtn">本月</button>
+    <button id="next">›</button>
+    <button class="today-btn" id="todayBtn">今天</button>
+    <button id="yearBtn">全年</button>
   </div>
 
   <div class="toolbar">
@@ -158,10 +166,25 @@ let curMonth = Number(params.get('month')) || (new Date().getMonth() + 1);
 // 編輯狀態
 let leaveTypes = [];
 let EMP = {};              // empId -> { name, leaves }
+let EMP_DEPT = {};         // empId -> 部門索引（拖曳限同部門）
+let DEPT_MEMBERS = {};     // 部門索引 -> [empId 順序]
+let dragEmp = null;
 let HOLIDAYS = new Set();
 let selType = '';          // 選的假別 id
 let rangeMode = false, rangeEmp = null, rangeStart = null;
 let editingInit = false;
+let fullYear = false;       // 全年模式
+let highlightDate = null;   // 雙擊日期欄高亮整欄
+
+// 依目前檢視(單月/全年)產生日期欄
+function daysForView(){
+  if (fullYear){
+    const out = [];
+    for (let m = 1; m <= 12; m++){ const n = daysInMonth(curYear, m); for (let d = 1; d <= n; d++){ const dow = new Date(curYear, m-1, d).getDay(); out.push({ d, date: dateStr(curYear, m, d), wd: WEEKDAY[dow], weekend: dow===0||dow===6, m }); } }
+    return out;
+  }
+  return buildDays(curYear, curMonth);
+}
 
 function periodOfType(id){ const t=leaveTypes.find(x=>x.id===id); const s=t?(t.short_name||t.name||''):''; if(/早/.test(s))return 'morning'; if(/午/.test(s))return 'afternoon'; return 'full'; }
 function isBizType(id){ const t=leaveTypes.find(x=>x.id===id); return /差/.test(t?(t.short_name||t.name||''):''); }
@@ -220,17 +243,33 @@ function resolveCell(lv, legend){
   return { label, p, color };
 }
 
+// 由分槽(full/am/pm)產生一格 <td>。full 佔滿;am 上半、pm 下半,可並存。
+function cellHTML(slots, cls, empAttr, date){
+  if (slots && (slots.full || slots.am || slots.pm)){
+    if (slots.full){
+      const c = slots.full, p = periodOf(c.label);
+      if (p === 'full') return `<td class="${cls}"${empAttr} data-date="${date}"><div class="chip" style="background:${c.color}">${c.label}</div></td>`;
+      return `<td class="${cls} half"${empAttr} data-date="${date}"><div class="chip ${p}" style="background:${c.color}">${c.label}</div></td>`;
+    }
+    let inner = '';
+    if (slots.am) inner += `<div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div>`;
+    if (slots.pm) inner += `<div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div>`;
+    return `<td class="${cls} half"${empAttr} data-date="${date}">${inner}</td>`;
+  }
+  return `<td class="${cls}"${empAttr} data-date="${date}"></td>`;
+}
+
 function render(data){
   LAST = data;
-  const year = data.year, month = data.month;
-  const days = buildDays(year, month);
+  const days = daysForView();
   const holidays = new Set(data.holidays || []);
   const legend = (data.legend && Object.keys(data.legend).length) ? data.legend : DEFAULT_COLORS;
   const today = todayStr();
+  const viewLabel = fullYear ? `${curYear} 全年` : `${curYear} 年 ${curMonth} 月`;
 
   document.getElementById('title').textContent = '全部排休';
-  document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${year} 年 ${month} 月`;
-  document.getElementById('monthLabel').textContent = `${year} 年 ${month} 月`;
+  document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${viewLabel}`;
+  document.getElementById('monthLabel').textContent = viewLabel;
 
   // 圖例
   const leg = document.getElementById('legend');
@@ -253,42 +292,45 @@ function render(data){
     const isHol = holidays.has(day.date);
     const cls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
     const todayCls = day.date === today ? ' today' : '';
-    html += `<th class="day ${cls}${todayCls}"><div>${day.d}</div><div class="wd">${day.wd}</div></th>`;
+    const hlCls = day.date === highlightDate ? ' hl' : '';
+    const mstart = (fullYear && day.d === 1) ? ' mstart' : '';
+    const mlabel = (fullYear && day.d === 1) ? `<div class="mtag">${day.m}月</div>` : '';
+    html += `<th class="day ${cls}${todayCls}${hlCls}${mstart}" data-date="${day.date}">${mlabel}<div>${day.d}</div><div class="wd">${day.wd}</div></th>`;
   });
   html += '</tr></thead><tbody>';
 
   // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
   HOLIDAYS = holidays;
-  EMP = {};
+  EMP = {}; EMP_DEPT = {}; DEPT_MEMBERS = {};
   const colCount = days.length + 1;
   const depts = data.departments || [];
   let anyMember = false;
-  depts.forEach(dept=>{
+  depts.forEach((dept, di)=>{
     html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
+    DEPT_MEMBERS[di] = [];
     (dept.members || []).forEach(m=>{
       anyMember = true;
-      if (m.id) EMP[m.id] = { name: m.name, leaves: m.leaves || {} };
+      if (m.id){ EMP[m.id] = { name: m.name, leaves: m.leaves || {} }; EMP_DEPT[m.id] = di; DEPT_MEMBERS[di].push(m.id); }
       const empAttr = m.id ? ` data-emp="${m.id}"` : '';
-      html += `<tr><td class="name"><div class="n">${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
+      const rowAttr = m.id ? ` class="emprow" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
+      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⠿</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
       days.forEach(day=>{
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
         const todayCls = day.date === today ? ' today' : '';
+        const hlCls = day.date === highlightDate ? ' hl' : '';
+        const mstart = (fullYear && day.d === 1) ? ' mstart' : '';
         const pick = (rangeMode && rangeEmp===m.id && rangeStart===day.date) ? ' picking' : '';
-        const cell = resolveCell(m.leaves ? m.leaves[day.date] : null, legend);
-        if (cell){
-          const halfCls = cell.p === 'full' ? '' : ' half';
-          const chipCls = cell.p === 'full' ? 'chip' : `chip ${cell.p}`;
-          html += `<td class="day ${baseCls}${todayCls}${halfCls}${pick}"${empAttr} data-date="${day.date}"><div class="${chipCls}" style="background:${cell.color}">${cell.label}</div></td>`;
-        } else {
-          html += `<td class="day ${baseCls}${todayCls}${pick}"${empAttr} data-date="${day.date}"></td>`;
-        }
+        const cls = `day ${baseCls}${todayCls}${hlCls}${mstart}${pick}`;
+        const slots = m.leaves ? m.leaves[day.date] : null;
+        html += cellHTML(slots, cls, empAttr, day.date);
       });
       html += '</tr>';
     });
   });
   html += '</tbody>';
   table.innerHTML = html;
+  attachDrag();
 
   const status = document.getElementById('status');
   if (!anyMember){
@@ -319,12 +361,36 @@ async function initEditing(){
   rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
   const table = document.getElementById('table');
   table.addEventListener('click', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
-  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCellDbl(td.dataset.emp, td.dataset.date); });
+  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
 }
 
+// 拖曳排序員工（限同部門）：放開後依新順序重設 sort_order。
+function attachDrag(){
+  document.querySelectorAll('tr.emprow').forEach(tr=>{
+    tr.ondragstart = (e)=>{ dragEmp = tr.dataset.emp; tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
+    tr.ondragend = ()=>{ tr.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x=>x.classList.remove('dragover')); };
+    tr.ondragover = (e)=>{ if (dragEmp && tr.dataset.dept === EMP_DEPT[dragEmp]+'' ){ e.preventDefault(); tr.classList.add('dragover'); } };
+    tr.ondragleave = ()=>tr.classList.remove('dragover');
+    tr.ondrop = (e)=>{ e.preventDefault(); tr.classList.remove('dragover'); const target = tr.dataset.emp; const dragged = dragEmp; dragEmp = null; if (dragged && target && dragged !== target) reorderEmp(dragged, target); };
+  });
+}
+async function reorderEmp(draggedId, targetId){
+  const dk = EMP_DEPT[draggedId];
+  if (dk == null || dk !== EMP_DEPT[targetId]) { alert('只能在同一部門內調整順序'); return; }
+  const arr = (DEPT_MEMBERS[dk] || []).slice();
+  const from = arr.indexOf(draggedId); if (from < 0) return;
+  arr.splice(from, 1);
+  const to = arr.indexOf(targetId);
+  arr.splice(to < 0 ? arr.length : to, 0, draggedId);
+  for (let i = 0; i < arr.length; i += 10){
+    await Promise.all(arr.slice(i, i+10).map((id, j)=> App.adminApi(`/api/admin/employees/${id}`, { method:'PUT', body: JSON.stringify({ sort_order: (i + j + 1) * 10 }) })));
+  }
+  load();
+}
+function periodToSlot(p){ return p === 'morning' ? 'am' : p === 'afternoon' ? 'pm' : 'full'; }
 function onCell(empId, date){
   const emp = EMP[empId]; if (!emp) return;
-  const has = emp.leaves && emp.leaves[date];
+  const slots = emp.leaves && emp.leaves[date];
   if (rangeMode){
     if (!selType){ alert('請先選擇假別'); return; }
     if (!rangeStart || rangeEmp !== empId){ rangeEmp = empId; rangeStart = date; render(LAST); return; }
@@ -333,21 +399,39 @@ function onCell(empId, date){
     fillRangeRow(who, a, b, selType);
     return;
   }
-  if (!has){ if (!selType){ alert('請先從上方「選擇假別」'); return; } fillCell(empId, date, selType); }
+  if (!selType){ alert('請先從上方「選擇假別」'); return; }
+  const slot = periodToSlot(periodOfType(selType));
+  if (slots && slots[slot]) return; // 該時段已有 → 不重複填(取消請雙擊)
+  fillCell(empId, date, selType);
 }
-function onCellDbl(empId, date){
-  const emp = EMP[empId]; if (!emp || !(emp.leaves && emp.leaves[date])) return;
-  const run = buildRun(empId, date);
-  if (run){
-    const whole = confirm(`這是一段連續 ${run.length} 天的假。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
-    delByDate(empId, whole ? run : [date]);
-  } else if (confirm('取消這格的請假？')) {
-    delByDate(empId, [date]);
+function onCellDbl(empId, date, ev){
+  const emp = EMP[empId]; const slots = emp && emp.leaves && emp.leaves[date]; if (!slots) return;
+  if (slots.full && periodOf(slots.full.label) === 'full'){
+    const run = buildRun(empId, date);
+    if (run){
+      const whole = confirm(`這是一段連續 ${run.length} 天的假。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
+      delByDate(empId, whole ? run : [date]);
+    } else if (confirm('取消這格的請假？')) {
+      delByDate(empId, [date]);
+    }
+    return;
   }
+  // 半天：依滑鼠 Y 座標決定刪上午(上半)或下午(下半)
+  const td = ev && ev.target.closest('td.day');
+  let topHalf = true;
+  if (td){ const r = td.getBoundingClientRect(); topHalf = ev.clientY < r.top + r.height/2; }
+  let period = null;
+  const am = slots.am || (slots.full && periodOf(slots.full.label)==='am');
+  const pm = slots.pm || (slots.full && periodOf(slots.full.label)==='pm');
+  if (topHalf && am) period = 'morning';
+  else if (!topHalf && pm) period = 'afternoon';
+  else period = slots.am ? 'morning' : slots.pm ? 'afternoon' : null;
+  if (!period){ if (confirm('取消這格的請假？')) delByDate(empId, [date]); return; }
+  if (confirm(`取消這天的${period==='morning'?'上午':'下午'}休假？`)) delByDate(empId, [date], period);
 }
 function buildRun(empId, date){
-  const lv = EMP[empId].leaves; const here = lv[date]; if (!here) return null;
-  const lab = here.label; const has = (s)=> lv[s] && lv[s].label === lab;
+  const lv = EMP[empId].leaves; const here = lv[date]; if (!here || !here.full) return null;
+  const lab = here.full.label; const has = (s)=> lv[s] && lv[s].full && lv[s].full.label === lab;
   const dates = [date];
   let d = new Date(date+'T00:00:00');
   while (true){ d.setDate(d.getDate()-1); const s = dstr(d); if (has(s)) dates.unshift(s); else break; }
@@ -375,8 +459,10 @@ async function fillCell(empId, date, type){
   if (!r.ok){ alert('填入失敗（可能需要管理密鑰）'); return; }
   load();
 }
-async function delByDate(empId, dates){
-  const r = await App.adminApi('/api/admin/leaves/delete-by-date', { method:'POST', body: JSON.stringify({ employee_id: empId, dates }) });
+async function delByDate(empId, dates, period){
+  const body = { employee_id: empId, dates };
+  if (period) body.period = period;
+  const r = await App.adminApi('/api/admin/leaves/delete-by-date', { method:'POST', body: JSON.stringify(body) });
   if (!r.ok){ alert('刪除失敗'); return; }
   load();
 }
@@ -435,11 +521,15 @@ async function load(){
   }
 }
 
-function go(deltaMonths){
-  const d = new Date(curYear, curMonth - 1 + deltaMonths, 1);
-  curYear = d.getFullYear();
-  curMonth = d.getMonth() + 1;
-  load();
+function go(delta){
+  if (fullYear){ curYear += delta; }
+  else { const d = new Date(curYear, curMonth - 1 + delta, 1); curYear = d.getFullYear(); curMonth = d.getMonth() + 1; }
+  load().then(scrollToToday);
+}
+function scrollToToday(){
+  const sc = document.querySelector('.scroll');
+  const th = document.querySelector(`th.day[data-date="${todayStr()}"]`);
+  if (sc && th) sc.scrollLeft = Math.max(0, th.offsetLeft - 140);
 }
 
 document.getElementById('prev').onclick = () => go(-1);
@@ -447,10 +537,16 @@ document.getElementById('next').onclick = () => go(1);
 document.getElementById('todayBtn').onclick = () => {
   const t = new Date();
   curYear = t.getFullYear(); curMonth = t.getMonth() + 1;
-  load();
+  load().then(scrollToToday);
+};
+document.getElementById('yearBtn').onclick = () => {
+  fullYear = !fullYear;
+  document.getElementById('yearBtn').classList.toggle('today-btn', fullYear);
+  document.getElementById('yearBtn').textContent = fullYear ? '單月' : '全年';
+  load().then(scrollToToday);
 };
 
-load();
+load().then(scrollToToday);
 </script>
 </body>
 </html>
