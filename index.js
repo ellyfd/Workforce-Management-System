@@ -178,6 +178,143 @@ export default {
         return json({ ok: true });
       }
 
+      // ── 部門 CRUD ───────────────────────────────────────────────
+      if (pathname === '/api/admin/departments' && method === 'GET') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const r = await env.DB.prepare(
+          `SELECT d.*, (SELECT COUNT(*) FROM employees e
+              WHERE e.status='active' AND instr(e.department_ids, d.id) > 0) AS member_count
+           FROM departments d WHERE d.status != 'hidden' ORDER BY d.sort_order`,
+        ).all();
+        return json(r.results);
+      }
+      if (pathname === '/api/admin/departments' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { name, sort_order = 0 } = await request.json();
+        if (!name) return json({ error: 'missing_name' }, 400);
+        const id = 'd_' + crypto.randomUUID().slice(0, 8);
+        await env.DB.prepare('INSERT INTO departments (id, name, sort_order, status) VALUES (?,?,?,?)')
+          .bind(id, name, sort_order, 'active').run();
+        return json({ id, name, sort_order, status: 'active' });
+      }
+      const deptM = pathname.match(/^\/api\/admin\/departments\/(.+)$/);
+      if (deptM && method === 'PUT') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const b = await request.json();
+        await env.DB.prepare(
+          'UPDATE departments SET name = COALESCE(?,name), sort_order = COALESCE(?,sort_order), status = COALESCE(?,status) WHERE id = ?',
+        ).bind(b.name ?? null, b.sort_order ?? null, b.status ?? null, deptM[1]).run();
+        return json({ ok: true });
+      }
+      if (deptM && method === 'DELETE') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        await env.DB.prepare('DELETE FROM departments WHERE id = ?').bind(deptM[1]).run();
+        return json({ ok: true });
+      }
+
+      // ── 員工 CRUD ───────────────────────────────────────────────
+      if (pathname === '/api/admin/employees' && method === 'GET') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const r = await env.DB.prepare(
+          'SELECT id, name, english_name, department_ids, status, sort_order FROM employees ORDER BY sort_order, name',
+        ).all();
+        return json(r.results);
+      }
+      if (pathname === '/api/admin/employees' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0 } = await request.json();
+        if (!name) return json({ error: 'missing_name' }, 400);
+        const id = 'e_' + crypto.randomUUID().slice(0, 8);
+        await env.DB.prepare(
+          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order) VALUES (?,?,?,?,?,?)',
+        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order).run();
+        return json({ id });
+      }
+      const empM = pathname.match(/^\/api\/admin\/employees\/(.+)$/);
+      if (empM && method === 'PUT') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const b = await request.json();
+        const dids = b.department_ids !== undefined ? JSON.stringify(b.department_ids || []) : null;
+        await env.DB.prepare(
+          `UPDATE employees SET name = COALESCE(?,name), english_name = COALESCE(?,english_name),
+             department_ids = COALESCE(?,department_ids), status = COALESCE(?,status),
+             sort_order = COALESCE(?,sort_order) WHERE id = ?`,
+        ).bind(b.name ?? null, b.english_name ?? null, dids, b.status ?? null, b.sort_order ?? null, empM[1]).run();
+        return json({ ok: true });
+      }
+      if (empM && method === 'DELETE') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        await env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ?').bind(empM[1]).run();
+        await env.DB.prepare('DELETE FROM employees WHERE id = ?').bind(empM[1]).run();
+        return json({ ok: true });
+      }
+
+      // ── 假別 CRUD ───────────────────────────────────────────────
+      if (pathname === '/api/admin/leave-types' && method === 'GET') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const r = await env.DB.prepare('SELECT * FROM leave_types ORDER BY sort_order').all();
+        return json(r.results);
+      }
+      if (pathname === '/api/admin/leave-types' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { name, short_name = null, color = '#64748b', sort_order = 0 } = await request.json();
+        if (!name) return json({ error: 'missing_name' }, 400);
+        const id = 'lt_' + crypto.randomUUID().slice(0, 8);
+        await env.DB.prepare('INSERT INTO leave_types (id, name, short_name, color, sort_order) VALUES (?,?,?,?,?)')
+          .bind(id, name, short_name, color, sort_order).run();
+        return json({ id });
+      }
+      const ltM = pathname.match(/^\/api\/admin\/leave-types\/(.+)$/);
+      if (ltM && method === 'PUT') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const b = await request.json();
+        await env.DB.prepare(
+          'UPDATE leave_types SET name = COALESCE(?,name), short_name = COALESCE(?,short_name), color = COALESCE(?,color), sort_order = COALESCE(?,sort_order) WHERE id = ?',
+        ).bind(b.name ?? null, b.short_name ?? null, b.color ?? null, b.sort_order ?? null, ltM[1]).run();
+        return json({ ok: true });
+      }
+      if (ltM && method === 'DELETE') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        await env.DB.prepare('DELETE FROM leave_types WHERE id = ?').bind(ltM[1]).run();
+        return json({ ok: true });
+      }
+
+      // ── 假日 CRUD ───────────────────────────────────────────────
+      if (pathname === '/api/admin/holidays' && method === 'GET') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const year = url.searchParams.get('year');
+        let q = 'SELECT * FROM holidays';
+        const binds = [];
+        if (year) { q += ' WHERE date >= ? AND date <= ?'; binds.push(`${year}-01-01`, `${year}-12-31`); }
+        q += ' ORDER BY date';
+        const r = await env.DB.prepare(q).bind(...binds).all();
+        return json(r.results);
+      }
+      if (pathname === '/api/admin/holidays' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { date, name = null, type = 'national' } = await request.json();
+        if (!date) return json({ error: 'missing_date' }, 400);
+        await env.DB.prepare('DELETE FROM holidays WHERE date = ?').bind(date).run();
+        const id = 'h_' + crypto.randomUUID().slice(0, 8);
+        await env.DB.prepare('INSERT INTO holidays (id, date, name, type) VALUES (?,?,?,?)')
+          .bind(id, date, name, type).run();
+        return json({ id, date, name, type });
+      }
+      const holM = pathname.match(/^\/api\/admin\/holidays\/(.+)$/);
+      if (holM && method === 'DELETE') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        await env.DB.prepare('DELETE FROM holidays WHERE id = ?').bind(holM[1]).run();
+        return json({ ok: true });
+      }
+
+      // ── 當日儀表板 ──────────────────────────────────────────────
+      if (pathname === '/api/dashboard' && method === 'GET') {
+        const now = new Date();
+        const date = url.searchParams.get('date') || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        const dept = url.searchParams.get('dept') || '';
+        return json(await buildDashboard(env, date, dept));
+      }
+
       // ── 儀表板統計 ──────────────────────────────────────────────
       if (pathname === '/api/stats' && method === 'GET') {
         const now = new Date();
@@ -248,6 +385,57 @@ function safeIds(s) {
 // 一筆休假折算成「天數」：整天=1、半天(上/下午)=0.5。
 function leaveDays(period) {
   return period === 'morning' || period === 'afternoon' ? 0.5 : 1;
+}
+
+async function buildDashboard(env, date, deptId) {
+  const [emps, depts, types, recs] = await Promise.all([
+    env.DB.prepare("SELECT id, name, english_name, department_ids FROM employees WHERE status = 'active'").all(),
+    env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
+    env.DB.prepare('SELECT * FROM leave_types').all(),
+    env.DB.prepare('SELECT * FROM leave_records WHERE date = ?').bind(date).all(),
+  ]);
+
+  const typeById = Object.fromEntries(types.results.map((t) => [t.id, t]));
+  const deptById = Object.fromEntries(depts.results.map((d) => [d.id, d]));
+  const inDept = (e) => !deptId || safeIds(e.department_ids).includes(deptId);
+
+  const active = emps.results.filter(inDept);
+  const empById = Object.fromEntries(active.map((e) => [e.id, e]));
+  const expected = active.length;
+
+  const byType = {};
+  const onLeaveList = [];
+  const onLeaveEmp = new Set();
+
+  for (const r of recs.results) {
+    const e = empById[r.employee_id];
+    if (!e) continue; // 不在篩選範圍內
+    onLeaveEmp.add(e.id);
+    const t = typeById[r.leave_type_id];
+    const label = t ? t.short_name || t.name : '休';
+    const color = t ? t.color || '#64748b' : '#64748b';
+    const key = r.leave_type_id || '?';
+    (byType[key] ||= { name: t ? t.name : '未分類', short_name: label, color, count: 0 }).count += 1;
+    const dept = safeIds(e.department_ids).map((id) => (deptById[id] || {}).name).filter(Boolean).join('、');
+    onLeaveList.push({ name: e.name, english_name: e.english_name || '', department: dept, label, period: r.period || 'full', color });
+  }
+
+  const onCount = onLeaveEmp.size;
+  const onDuty = Math.max(0, expected - onCount);
+  const rate = expected > 0 ? Math.round((onDuty / expected) * 1000) / 10 : 100;
+
+  return {
+    date,
+    department_id: deptId || null,
+    expected,
+    on_duty: onDuty,
+    on_leave_count: onCount,
+    attendance_rate: rate,
+    by_type: Object.values(byType).sort((a, b) => b.count - a.count),
+    on_leave_list: onLeaveList,
+    departments: depts.results,
+    updated_at: new Date().toISOString(),
+  };
 }
 
 async function buildStats(env, year) {
