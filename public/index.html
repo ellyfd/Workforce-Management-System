@@ -13,7 +13,7 @@
     --weekend: #fef2f2;
     --holiday: #fee2e2;
     --today: #fef3c7;
-    --name-w: 120px;
+    --name-w: 104px;
     --day-w: 44px;
     --row-h: 40px;
     --head-h: 46px;
@@ -44,6 +44,9 @@
   .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
+  .helpbox { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-top: 10px; }
+  .helpbox summary { cursor: pointer; font-weight: 600; }
+  .helpbox .legend { margin: 6px 0 2px; }
   .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size:14px; color: #374151; }
   .legend .dot { width: 14px; height: 14px; border-radius: 4px; }
   .legend .note { color: var(--muted); font-size:14px; }
@@ -149,8 +152,20 @@
 
   <div class="legend" id="deptbar"><span class="muted">部門：</span></div>
 
-  <div class="legend" id="legend"></div>
   <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
+
+  <details class="helpbox">
+    <summary>操作說明與假別圖例</summary>
+    <ul class="muted admin-only" style="margin:10px 0 4px;padding-left:18px;line-height:1.8;">
+      <li>填入：選假別後點格子；取消：雙擊已填入的格子（半天點上半/下半）。</li>
+      <li>區間：按「區間」後，點同一人列的起始日與結束日。</li>
+    </ul>
+    <ul class="muted" style="margin:10px 0 4px;padding-left:18px;line-height:1.8;">
+      <li>「累計」＝年度累計休假日，依「休假設定」各假別的計入天數加總（例：休=1、午休/早休=0.5）。</li>
+    </ul>
+    <div style="font-weight:600;margin:8px 0 2px;">假別圖例</div>
+    <div class="legend" id="legend"></div>
+  </details>
   <footer id="footer"></footer>
 </div>
 
@@ -336,7 +351,7 @@ function render(data){
       const empAttr = m.id ? ` data-emp="${m.id}"` : '';
       const rowAttr = m.id ? ` class="emprow" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
       const tot = m.id != null ? (yearTotals[m.id] || 0) : 0;
-      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⋮⋮</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td><td class="tot">${tot||''}</td>`;
+      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⋮⋮</span> ':''}${m.name||''}</div></td><td class="tot">${tot||''}</td>`;
       days.forEach(day=>{
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
