@@ -57,6 +57,12 @@ function leaveUpsertStmts(env, employeeId, date, leaveTypeId, period, note = nul
   ];
 }
 
+// 清理懸空職代：把所有把 removedId 設為 deputy_1/deputy_2 的人改回 NULL。
+async function clearDeputyRefs(env, removedId) {
+  await env.DB.prepare('UPDATE employees SET deputy_1 = NULL WHERE deputy_1 = ?').bind(removedId).run();
+  await env.DB.prepare('UPDATE employees SET deputy_2 = NULL WHERE deputy_2 = ?').bind(removedId).run();
+}
+
 // 大量刪除分批執行，避免一次對 D1 發太多並發（每批 N 筆）。
 async function runInBatches(items, fn, size = 10) {
   for (let i = 0; i < items.length; i += size) {
@@ -298,19 +304,42 @@ export default {
       if (pathname === '/api/admin/employees' && method === 'GET') {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare(
-          'SELECT id, name, english_name, department_ids, status, sort_order FROM employees ORDER BY sort_order, name',
+          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2 FROM employees ORDER BY sort_order, name',
         ).all();
         return json(r.results);
       }
       if (pathname === '/api/admin/employees' && method === 'POST') {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
-        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0 } = await request.json();
+        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0, deputy_1 = null, deputy_2 = null } = await request.json();
         if (!name) return json({ error: 'missing_name' }, 400);
         const id = 'e_' + crypto.randomUUID().slice(0, 8);
         await env.DB.prepare(
-          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order) VALUES (?,?,?,?,?,?)',
-        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order).run();
+          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2) VALUES (?,?,?,?,?,?,?,?)',
+        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order, deputy_1 || null, deputy_2 || null).run();
         return json({ id });
+      }
+      // 批次更新（統一改部門 / 狀態；未給的欄位不動）
+      if (pathname === '/api/admin/employees/bulk' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { ids = [], department_ids, status } = await request.json();
+        if (!ids.length) return json({ error: 'empty' }, 400);
+        const dids = department_ids !== undefined ? JSON.stringify(department_ids || []) : null;
+        await runInBatches(ids, (id) =>
+          env.DB.prepare('UPDATE employees SET department_ids = COALESCE(?,department_ids), status = COALESCE(?,status) WHERE id = ?')
+            .bind(dids, status ?? null, id).run());
+        if (status === 'inactive') await runInBatches(ids, (id) => clearDeputyRefs(env, id));
+        return json({ ok: true, count: ids.length });
+      }
+      // 批次刪除（含職代參照清理）
+      if (pathname === '/api/admin/employees/delete' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { ids = [] } = await request.json();
+        await runInBatches(ids, async (id) => {
+          await clearDeputyRefs(env, id);
+          await env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ?').bind(id).run();
+          await env.DB.prepare('DELETE FROM employees WHERE id = ?').bind(id).run();
+        });
+        return json({ ok: true, count: ids.length });
       }
       const empM = pathname.match(/^\/api\/admin\/employees\/(.+)$/);
       if (empM && method === 'PUT') {
@@ -320,12 +349,15 @@ export default {
         await env.DB.prepare(
           `UPDATE employees SET name = COALESCE(?,name), english_name = COALESCE(?,english_name),
              department_ids = COALESCE(?,department_ids), status = COALESCE(?,status),
-             sort_order = COALESCE(?,sort_order) WHERE id = ?`,
-        ).bind(b.name ?? null, b.english_name ?? null, dids, b.status ?? null, b.sort_order ?? null, empM[1]).run();
+             sort_order = COALESCE(?,sort_order), deputy_1 = ?, deputy_2 = ? WHERE id = ?`,
+        ).bind(b.name ?? null, b.english_name ?? null, dids, b.status ?? null, b.sort_order ?? null,
+          b.deputy_1 ?? null, b.deputy_2 ?? null, empM[1]).run();
+        if (b.status === 'inactive') await clearDeputyRefs(env, empM[1]); // 離職→清理別人指向他的職代
         return json({ ok: true });
       }
       if (empM && method === 'DELETE') {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        await clearDeputyRefs(env, empM[1]); // 刪除→清理懸空職代參照
         await env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ?').bind(empM[1]).run();
         await env.DB.prepare('DELETE FROM employees WHERE id = ?').bind(empM[1]).run();
         return json({ ok: true });

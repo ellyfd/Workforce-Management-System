@@ -8,8 +8,12 @@
 <style>
   .checks{ display:flex; flex-wrap:wrap; gap:10px; }
   .checks label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; color:var(--ink); }
-  .num{ width:54px; }
-  .note{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; font-size:12px; border-radius:8px; padding:8px 10px; margin-bottom:12px; }
+  .num{ width:60px; }
+  .note{ color:var(--muted); font-size:13px; margin-bottom:12px; }
+  .tag.amber{ background:#fef3c7; color:#92400e; }
+  .selbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
+  .filterbox{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  input[type=file]{ display:none; }
 </style>
 </head>
 <body class="has-shell">
@@ -27,9 +31,16 @@
 <script>
 const { esc } = App;
 let depts = [], emps = [], tab = 'emp';
+let deptFilter = new Set();   // 員工列表的部門篩選
+let selected = new Set();      // 勾選的員工 id（批次用）
 const STATUS = { active:'在職', parental_leave:'育嬰假', inactive:'離職', hidden:'隱藏' };
+const STATUS_CLS = { active:'green', parental_leave:'blue', inactive:'gray', hidden:'amber' };
+
 const deptName = id => (depts.find(d=>d.id===id)||{}).name || '';
-function empDepts(e){ let ids=[]; try{ ids=JSON.parse(e.department_ids||'[]'); }catch(_){}; return ids.map(deptName).filter(Boolean); }
+function empDeptIds(e){ try{ const v=JSON.parse(e.department_ids||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
+function empDepts(e){ return empDeptIds(e).map(deptName).filter(Boolean); }
+function empById(id){ return emps.find(e=>e.id===id); }
+function nameOf(id){ const e=empById(id); return e?e.name:''; }
 
 async function loadAll(){
   const [rd, re] = await Promise.all([ App.adminApi('/api/admin/departments'), App.adminApi('/api/admin/employees') ]);
@@ -38,64 +49,179 @@ async function loadAll(){
   emps = re.ok ? await re.json() : [];
   render();
 }
-
 function render(){ tab==='emp' ? renderEmp() : renderDept(); }
 
-/* ── 員工 ── */
+/* ── 員工管理 ── */
+function visibleEmps(){
+  if (!deptFilter.size) return emps;
+  return emps.filter(e => empDeptIds(e).some(d => deptFilter.has(d)));
+}
 function renderEmp(){
-  const rows = emps.map(e=>`
-    <tr>
+  const list = visibleEmps();
+  const filterChips = depts.map(d=>`<label><input type="checkbox" class="df" value="${esc(d.id)}" ${deptFilter.has(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
+  const rows = list.map(e=>{
+    const dep = [e.deputy_1, e.deputy_2].filter(Boolean).map(nameOf).filter(Boolean).join('、');
+    return `<tr>
+      <td><input type="checkbox" class="sel" value="${esc(e.id)}" ${selected.has(e.id)?'checked':''}/></td>
       <td><b>${esc(e.name)}</b>${e.english_name?` <span class="muted">${esc(e.english_name)}</span>`:''}</td>
       <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
-      <td><span class="tag ${e.status==='active'?'green':'gray'}">${STATUS[e.status]||e.status}</span></td>
+      <td>${dep?esc(dep):'<span class="muted">—</span>'}</td>
+      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span></td>
       <td class="row"><button class="iconbtn" data-edit="${esc(e.id)}">✏️</button><button class="iconbtn" data-del="${esc(e.id)}">🗑️</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
+  const selBar = selected.size ? `<div class="selbar">
+      <b>已選 ${selected.size} 人</b>
+      <button class="btn sm" id="bulkEdit">批次編輯</button>
+      <button class="btn sm danger" id="bulkDel">批次刪除</button>
+      <button class="btn sm" id="selClear">清除選取</button>
+    </div>` : '';
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px;">
-        <b>員工列表 <span class="muted">（${emps.length}）</span></b>
-        <button class="btn primary" id="add">＋ 新增員工</button>
+        <b>員工列表 <span class="muted">（${list.length}）</span></b>
+        <div class="row">
+          <button class="btn sm" id="tpl">下載模板</button>
+          <button class="btn sm" id="imp">CSV 匯入</button>
+          <input type="file" id="impFile" accept=".csv,text/csv" />
+          <button class="btn primary" id="add">＋ 新增員工</button>
+        </div>
       </div>
+      <div class="filterbox"><span class="muted">篩選部門：</span><div class="checks">${filterChips||'<span class="muted">無部門</span>'}</div></div>
+      ${selBar}
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>姓名</th><th>部門</th><th>狀態</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="4" class="empty">尚無員工</td></tr>'}</tbody>
+        <thead><tr><th></th><th>姓名</th><th>部門</th><th>職代</th><th>狀態</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" class="empty">無員工</td></tr>'}</tbody>
       </table></div>
     </div>`;
   document.getElementById('add').onclick = ()=>empForm();
-  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(emps.find(x=>x.id===b.dataset.edit)));
+  document.getElementById('tpl').onclick = downloadTemplate;
+  document.getElementById('imp').onclick = ()=>document.getElementById('impFile').click();
+  document.getElementById('impFile').onchange = (ev)=>{ if(ev.target.files[0]) importCSV(ev.target.files[0]); };
+  document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?deptFilter.add(c.value):deptFilter.delete(c.value); renderEmp(); });
+  document.querySelectorAll('.sel').forEach(c=>c.onchange=()=>{ c.checked?selected.add(c.value):selected.delete(c.value); renderEmp(); });
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(empById(b.dataset.edit)));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delEmp(b.dataset.del));
+  if (selected.size){
+    document.getElementById('selClear').onclick = ()=>{ selected.clear(); renderEmp(); };
+    document.getElementById('bulkEdit').onclick = bulkEditForm;
+    document.getElementById('bulkDel').onclick = bulkDelete;
+  }
+}
+
+function deputyOptions(selfId, deptIds, current, excludeId){
+  const cands = emps.filter(e => e.status==='active' && e.id!==selfId && e.id!==excludeId && empDeptIds(e).some(d=>deptIds.includes(d)));
+  return `<option value="">無</option>` + cands.map(e=>`<option value="${esc(e.id)}" ${current===e.id?'selected':''}>${esc(e.name)}${e.english_name?`（${esc(e.english_name)}）`:''}</option>`).join('');
 }
 
 function empForm(e){
-  const cur = e || { name:'', english_name:'', department_ids:'[]', status:'active', sort_order:0 };
-  let ids=[]; try{ ids=JSON.parse(cur.department_ids||'[]'); }catch(_){}
-  const checks = depts.map(d=>`<label><input type="checkbox" value="${esc(d.id)}" ${ids.includes(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
-  const opts = Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${cur.status===k?'selected':''}>${v}</option>`).join('');
+  const cur = e || { name:'', english_name:'', department_ids:'[]', status:'active', deputy_1:null, deputy_2:null, sort_order:(emps.length+1)*10 };
+  let ids = empDeptIds(cur);
+  const checks = depts.map(d=>`<label><input type="checkbox" class="dc" value="${esc(d.id)}" ${ids.includes(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
+  const statusOpts = Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${cur.status===k?'selected':''}>${v}</option>`).join('');
   modal(`${e?'編輯':'新增'}員工`, `
     <div class="field"><label>姓名</label><input id="f_name" value="${esc(cur.name)}" /></div>
     <div class="field"><label>英文名 / 職代</label><input id="f_en" value="${esc(cur.english_name||'')}" /></div>
-    <div class="field"><label>部門</label><div class="checks">${checks||'<span class="muted">尚無部門</span>'}</div></div>
-    <div class="field"><label>狀態</label><select id="f_status">${opts}</select></div>
+    <div class="field"><label>部門</label><div class="checks" id="f_depts">${checks||'<span class="muted">尚無部門</span>'}</div></div>
+    <div class="field"><label>第一順位職代</label><select id="f_dep1"></select></div>
+    <div class="field"><label>第二順位職代</label><select id="f_dep2"></select></div>
+    <div class="field"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
+    <div class="muted" style="font-size:12px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
-    if (!name) { alert('請輸入姓名'); return false; }
-    const department_ids = [...document.querySelectorAll('.modal .checks input:checked')].map(i=>i.value);
-    const body = { name, english_name: document.getElementById('f_en').value.trim(), department_ids, status: document.getElementById('f_status').value };
+    if (!name){ alert('請輸入姓名'); return false; }
+    const department_ids = [...document.querySelectorAll('#f_depts .dc:checked')].map(i=>i.value);
+    const body = {
+      name, english_name: document.getElementById('f_en').value.trim(),
+      department_ids,
+      deputy_1: document.getElementById('f_dep1').value || null,
+      deputy_2: document.getElementById('f_dep2').value || null,
+      status: document.getElementById('f_status').value,
+    };
     const res = e ? await App.adminApi(`/api/admin/employees/${e.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify(body)});
     if (!res.ok){ alert('儲存失敗'); return false; }
     await loadAll(); return true;
   });
+  // 職代下拉：依勾選部門連動
+  const refreshDeputies = ()=>{
+    const selfId = e ? e.id : null;
+    const dids = [...document.querySelectorAll('#f_depts .dc:checked')].map(i=>i.value);
+    const d1 = document.getElementById('f_dep1'), d2 = document.getElementById('f_dep2');
+    const cur1 = d1.value || (e?e.deputy_1:'') || '';
+    d1.innerHTML = deputyOptions(selfId, dids, cur1, null);
+    const cur2 = d2.value || (e?e.deputy_2:'') || '';
+    d2.innerHTML = deputyOptions(selfId, dids, cur2, d1.value || cur1); // 排除 deputy_1
+  };
+  refreshDeputies();
+  document.querySelectorAll('#f_depts .dc').forEach(c=>c.onchange=refreshDeputies);
+  document.getElementById('f_dep1').onchange = refreshDeputies; // 改 deputy_1 → 重算 deputy_2 候選
 }
+
 async function delEmp(id){
-  const e = emps.find(x=>x.id===id);
-  if (!confirm(`確定刪除「${e?e.name:''}」？其休假紀錄也會一併刪除。`)) return;
+  const e = empById(id);
+  if (!confirm(`確定刪除「${e?e.name:''}」？其休假紀錄與職代參照都會清理。`)) return;
   const res = await App.adminApi(`/api/admin/employees/${id}`,{method:'DELETE'});
   if (!res.ok){ alert('刪除失敗'); return; }
+  selected.delete(id); loadAll();
+}
+
+function bulkEditForm(){
+  const checks = depts.map(d=>`<label><input type="checkbox" class="bc" value="${esc(d.id)}"/> ${esc(d.name)}</label>`).join('');
+  const statusOpts = `<option value="">（不改）</option>` + Object.entries(STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+  modal(`批次編輯 ${selected.size} 人`, `
+    <div class="muted" style="font-size:12px;margin-bottom:8px;">留空＝不更動。勾選部門會「覆蓋」這些人的部門。</div>
+    <div class="field"><label>設定部門（覆蓋）</label><div class="checks">${checks}</div>
+      <label style="margin-top:6px;"><input type="checkbox" id="b_setdept"/> 套用上面的部門設定</label></div>
+    <div class="field"><label>設定狀態</label><select id="b_status">${statusOpts}</select></div>
+  `, async ()=>{
+    const body = { ids:[...selected] };
+    if (document.getElementById('b_setdept').checked) body.department_ids = [...document.querySelectorAll('.modal .bc:checked')].map(i=>i.value);
+    const st = document.getElementById('b_status').value; if (st) body.status = st;
+    if (body.department_ids===undefined && !body.status){ alert('沒有要更改的項目'); return false; }
+    const res = await App.adminApi('/api/admin/employees/bulk',{method:'POST',body:JSON.stringify(body)});
+    if (!res.ok){ alert('批次更新失敗'); return false; }
+    selected.clear(); await loadAll(); return true;
+  });
+}
+async function bulkDelete(){
+  if (!confirm(`確定刪除選取的 ${selected.size} 人？休假紀錄與職代參照都會清理。`)) return;
+  const res = await App.adminApi('/api/admin/employees/delete',{method:'POST',body:JSON.stringify({ids:[...selected]})});
+  if (!res.ok){ alert('批次刪除失敗'); return; }
+  selected.clear(); loadAll();
+}
+
+/* ── CSV ── */
+function downloadTemplate(){
+  const csv = '﻿' + 'name,english_name,department_name\n王小明,Ming,DPC\n';
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'employees_template.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+}
+async function importCSV(file){
+  const text = (await file.text()).replace(/^﻿/, '').trim();
+  if (!text){ alert('檔案是空的'); return; }
+  const lines = text.split(/\r?\n/);
+  const header = lines[0].split(',').map(s=>s.trim().replace(/^﻿/, ''));
+  const ni = header.indexOf('name'), ei = header.indexOf('english_name'), di = header.indexOf('department_name');
+  if (ni < 0){ alert('CSV 需要有 name 欄位'); return; }
+  let ok = 0, skip = 0;
+  for (const line of lines.slice(1)){
+    const cols = line.split(',');
+    const name = (cols[ni]||'').trim(); if (!name){ continue; }
+    const dn = di>=0 ? (cols[di]||'').trim() : '';
+    const dept = depts.find(d=>d.name===dn);
+    const r = await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify({
+      name, english_name: ei>=0?(cols[ei]||'').trim():'', department_ids: dept?[dept.id]:[], status:'active',
+    })});
+    r.ok ? ok++ : skip++;
+  }
+  alert(`匯入完成：成功 ${ok} 筆${skip?`，失敗 ${skip} 筆`:''}。`);
   loadAll();
 }
 
-/* ── 部門 ── */
+/* ── 部門管理 ── */
+const deptSortTimers = {};
 function renderDept(){
   const rows = depts.map(d=>`
     <tr>
@@ -114,17 +240,23 @@ function renderDept(){
         <thead><tr><th>排序</th><th>部門名稱</th><th>員工人數</th><th></th></tr></thead>
         <tbody>${rows||'<tr><td colspan="4" class="empty">尚無部門</td></tr>'}</tbody>
       </table></div>
+      <div class="muted" style="font-size:12px;margin-top:8px;">排序欄可直接修改，停止輸入 0.5 秒後自動儲存。</div>
     </div>`;
   document.getElementById('addD').onclick = ()=>deptForm();
   document.querySelectorAll('[data-dedit]').forEach(b=>b.onclick=()=>deptForm(depts.find(x=>x.id===b.dataset.dedit)));
   document.querySelectorAll('[data-ddel]').forEach(b=>b.onclick=()=>delDept(b.dataset.ddel));
-  document.querySelectorAll('[data-sort]').forEach(inp=>inp.onchange=async ()=>{
-    await App.adminApi(`/api/admin/departments/${inp.dataset.sort}`,{method:'PUT',body:JSON.stringify({sort_order:Number(inp.value)||0})});
-    loadAll();
+  // 排序即時存（每部門 debounce 500ms）
+  document.querySelectorAll('[data-sort]').forEach(inp=>inp.oninput=()=>{
+    const id = inp.dataset.sort;
+    clearTimeout(deptSortTimers[id]);
+    deptSortTimers[id] = setTimeout(async ()=>{
+      await App.adminApi(`/api/admin/departments/${id}`,{method:'PUT',body:JSON.stringify({sort_order:Number(inp.value)||0})});
+      const dd = depts.find(x=>x.id===id); if (dd) dd.sort_order = Number(inp.value)||0;
+    }, 500);
   });
 }
 function deptForm(d){
-  const cur = d || { name:'', sort_order:(depts.length+1)*10 };
+  const cur = d || { name:'', sort_order:(depts.length+1) };
   modal(`${d?'編輯':'新增'}部門`, `
     <div class="field"><label>部門名稱</label><input id="d_name" value="${esc(cur.name)}" /></div>
     <div class="field"><label>排序（小的在前）</label><input id="d_sort" type="number" value="${cur.sort_order??0}" /></div>
@@ -155,7 +287,7 @@ function modal(title, inner, onSave){
   document.body.appendChild(wrap);
   const close = ()=>wrap.remove();
   wrap.querySelector('#m_cancel').onclick = close;
-  wrap.onclick = (e)=>{ if(e.target===wrap) close(); };
+  wrap.onclick = (ev)=>{ if(ev.target===wrap) close(); };
   wrap.querySelector('#m_save').onclick = async ()=>{ const ok = await onSave(); if (ok!==false) close(); };
 }
 
