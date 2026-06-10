@@ -40,6 +40,7 @@ function renderLt(){
       <td><span class="swatch" style="background:${esc(t.color||'#64748b')}"></span></td>
       <td><b>${esc(t.name)}</b></td>
       <td><span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)}</span></td>
+      <td>${Number(t.day_value)||0 ? `<b>${Number(t.day_value)}</b> 天` : '<span class="muted">不計</span>'}</td>
       <td>${t.sort_order??0}</td>
       <td class="row"><button class="iconbtn" data-edit="${esc(t.id)}">編輯</button><button class="iconbtn" data-del="${esc(t.id)}">刪除</button></td>
     </tr>`).join('');
@@ -50,25 +51,29 @@ function renderLt(){
         <button class="btn primary" id="add">＋ 新增假別</button>
       </div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>顏色</th><th>名稱</th><th>簡稱</th><th>排序</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="5" class="empty">尚無假別</td></tr>'}</tbody>
+        <thead><tr><th>顏色</th><th>名稱</th><th>簡稱</th><th>計入天數</th><th>排序</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" class="empty">尚無假別</td></tr>'}</tbody>
       </table></div>
+      <div class="muted" style="margin-top:8px;">「計入天數」＝排休表「累計」欄每填一格累加的天數（例：休=1、午休/早休=0.5、出差=不計）。</div>
     </div>`;
   document.getElementById('add').onclick = ()=>ltForm();
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>ltForm(types.find(x=>x.id===b.dataset.edit)));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delLt(b.dataset.del));
 }
 function ltForm(t){
-  const cur = t || { name:'', short_name:'', color:'#22c55e', sort_order:(types.length+1)*10 };
+  const cur = t || { name:'', short_name:'', color:'#22c55e', sort_order:(types.length+1)*10, day_value:1 };
   modal(`${t?'編輯':'新增'}假別`, `
     <div class="field"><label>名稱</label><input id="l_name" value="${esc(cur.name)}" /></div>
     <div class="field"><label>簡稱（表格上顯示）</label><input id="l_short" value="${esc(cur.short_name||'')}" maxlength="4" /></div>
     <div class="row"><div class="field"><label>顏色</label><input id="l_color" type="color" value="${esc(cur.color||'#22c55e')}" /></div>
     <div class="field" style="flex:1;"><label>排序</label><input id="l_sort" type="number" value="${cur.sort_order??0}" /></div></div>
+    <div class="field"><label>計入天數（累計欄每格累加；1＝一天、0.5＝半天、0＝不計）</label><input id="l_dayv" type="number" step="0.5" min="0" value="${Number(cur.day_value)||0}" /></div>
   `, async ()=>{
     const name = document.getElementById('l_name').value.trim();
     if (!name){ alert('請輸入名稱'); return false; }
-    const body = { name, short_name: document.getElementById('l_short').value.trim()||name, color: document.getElementById('l_color').value, sort_order: Number(document.getElementById('l_sort').value)||0 };
+    const dayv = Number(document.getElementById('l_dayv').value);
+    if (Number.isNaN(dayv) || dayv < 0){ alert('計入天數請輸入 0 以上的數字'); return false; }
+    const body = { name, short_name: document.getElementById('l_short').value.trim()||name, color: document.getElementById('l_color').value, sort_order: Number(document.getElementById('l_sort').value)||0, day_value: dayv };
     const res = t ? await App.adminApi(`/api/admin/leave-types/${t.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/leave-types',{method:'POST',body:JSON.stringify(body)});
     if (!res.ok){ alert('儲存失敗'); return false; }
