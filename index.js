@@ -106,10 +106,10 @@ export default {
         return json(r.results);
       }
 
-      // 公開假日清單（前端區間請假用來略過國定假日；?names=1 連名稱一起回）
+      // 公開假日清單（前端區間請假用來略過假日；?names=1 連名稱/類型一起回）
       if (pathname === '/api/holidays' && method === 'GET') {
         const year = url.searchParams.get('year');
-        let q = 'SELECT date, name FROM holidays';
+        let q = 'SELECT date, name, type FROM holidays';
         const binds = [];
         if (year) { q += ' WHERE date >= ? AND date <= ?'; binds.push(`${year}-01-01`, `${year}-12-31`); }
         const r = await env.DB.prepare(q).bind(...binds).all();
@@ -422,6 +422,7 @@ export default {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const { date, name = null, type = 'national' } = await request.json();
         if (!date) return json({ error: 'missing_date' }, 400);
+        if (!['national', 'company'].includes(type)) return json({ error: 'bad_type' }, 400);
         await env.DB.prepare('DELETE FROM holidays WHERE date = ?').bind(date).run();
         const id = 'h_' + crypto.randomUUID().slice(0, 8);
         await env.DB.prepare('INSERT INTO holidays (id, date, name, type) VALUES (?,?,?,?)')
@@ -429,6 +430,17 @@ export default {
         return json({ id, date, name, type });
       }
       const holM = pathname.match(/^\/api\/admin\/holidays\/(.+)$/);
+      if (holM && method === 'PUT') {
+        if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
+        const { date, name = null, type = 'national' } = await request.json();
+        if (!date) return json({ error: 'missing_date' }, 400);
+        if (!['national', 'company'].includes(type)) return json({ error: 'bad_type' }, 400);
+        // 改日期時清掉目標日既有的其他假日，維持一天一筆
+        await env.DB.prepare('DELETE FROM holidays WHERE date = ? AND id != ?').bind(date, holM[1]).run();
+        await env.DB.prepare('UPDATE holidays SET date = ?, name = ?, type = ? WHERE id = ?')
+          .bind(date, name, type, holM[1]).run();
+        return json({ id: holM[1], date, name, type });
+      }
       if (holM && method === 'DELETE') {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         await env.DB.prepare('DELETE FROM holidays WHERE id = ?').bind(holM[1]).run();

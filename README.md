@@ -42,7 +42,7 @@
 管理員(`role=admin` 或持有 `ADMIN_KEY`)獨享側邊欄「設定管理」區:
 
 - **人員管理**:維護部門、員工、排序、職務代理人(職代)。
-- **休假設定**:維護假別(名稱/簡稱/顏色)與國定假日。
+- **休假設定**:維護假別(名稱/簡稱/顏色)與假日。假日分**國定假日**與**公司假**(如員工旅遊),排休時兩者都會自動略過。
 - **休假代管**:替任一員工新增、修改、刪除休假,支援批次操作與重複資料一鍵去重。
 - **DPC 同步**:查看同步狀態、按「立即同步」手動觸發。
 
@@ -108,7 +108,7 @@
 | GET | `/api/calendar?year&month` | 全部排休(月曆總表用) |
 | GET | `/api/employees` | 人員清單(身分綁定用) |
 | GET | `/api/departments` | 部門清單(篩選用) |
-| GET | `/api/holidays?year&names` | 國定假日(區間請假略過用) |
+| GET | `/api/holidays?year&names` | 假日清單(國定假日/公司假,區間請假略過用) |
 | GET | `/api/leave-types` | 假別清單 |
 | GET | `/api/leave-check?employee_id&dates` | 請假前警示:職代同日請假 / 部門 1/3 上限 |
 | POST | `/api/bind` `{employee_id}` | 將本裝置綁定為某員工 |
@@ -135,7 +135,7 @@
 | POST | `/api/admin/employees/bulk` | 批次員工維護 |
 | POST | `/api/admin/employees/delete` | 刪除員工(自動清理懸空職代) |
 | GET/POST | `/api/admin/leave-types` | 假別維護 |
-| GET/POST | `/api/admin/holidays` | 國定假日維護 |
+| GET/POST/PUT | `/api/admin/holidays` | 假日維護(分國定假日/公司假) |
 | POST | `/api/admin/dedupe-leaves` | 重複休假紀錄一鍵去重 |
 
 ### 同步
@@ -201,7 +201,7 @@ npx wrangler dev      # 本機跑 Worker + 靜態資源
 | `public/me.html` | 我的排休(個人請假/改假) |
 | `public/dashboard.html` | 今日儀表板 |
 | `public/people.html` | 人員管理(部門/員工/職代) |
-| `public/leave-settings.html` | 休假設定(假別/國定假日) |
+| `public/leave-settings.html` | 休假設定(假別/假日:國定假日與公司假) |
 | `public/settings.html` | DPC 同步(狀態查看/手動觸發) |
 | `wrangler.toml` | Worker 設定(D1 綁定、靜態資源、Cron、vars) |
 | `scripts/build-dpc.mjs`、`public/dpc.json` | 舊版 GitHub Action 同步產物(過渡期備援) |
