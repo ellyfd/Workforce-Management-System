@@ -690,9 +690,11 @@ async function syncFromBase44(env) {
   });
 
   // 5) 重灌 DPC 休假紀錄
+  // period：半天型假別(早休/午休)一律以假別推斷——Base44 來的紀錄常帶 period='full',不可信。
   for (const r of dpcRecords) {
     const lt = ltById[r.leave_type_id];
-    const period = r.period || periodFromShort(lt ? lt.short_name : '');
+    const inferred = periodFromShort(lt ? lt.short_name : '');
+    const period = inferred !== 'full' ? inferred : (r.period || 'full');
     stmts.push(
       env.DB.prepare('INSERT INTO leave_records (id,employee_id,date,leave_type_id,period,note) VALUES (?,?,?,?,?,?)')
         .bind(r.id || crypto.randomUUID(), r.employee_id, r.date, r.leave_type_id, period, r.note || null),
