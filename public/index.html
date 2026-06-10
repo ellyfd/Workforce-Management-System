@@ -87,6 +87,10 @@
   tbody td.day.today { background: var(--today); }
   tbody td.day[data-emp] { cursor: pointer; }
   tbody td.day.picking { outline: 2px solid var(--blue); outline-offset: -2px; }
+  thead th.day.hl, tbody td.day.hl { background: #e0e7ff; }
+  thead th.day.mstart, tbody td.day.mstart { border-left: 2px solid #c7d2fe; }
+  thead th.day { cursor: default; }
+  thead th.day .mtag { font-size: 9px; color: var(--blue); font-weight: 700; line-height: 1; }
 
   tr.dept td {
     position: sticky; left: 0; z-index: 12;
@@ -117,10 +121,11 @@
   </header>
 
   <div class="toolbar">
-    <button id="prev">‹ 上個月</button>
+    <button id="prev">‹</button>
     <span class="month-label" id="monthLabel"></span>
-    <button id="next">下個月 ›</button>
-    <button class="today-btn" id="todayBtn">本月</button>
+    <button id="next">›</button>
+    <button class="today-btn" id="todayBtn">今天</button>
+    <button id="yearBtn">全年</button>
   </div>
 
   <div class="toolbar">
@@ -162,6 +167,18 @@ let HOLIDAYS = new Set();
 let selType = '';          // 選的假別 id
 let rangeMode = false, rangeEmp = null, rangeStart = null;
 let editingInit = false;
+let fullYear = false;       // 全年模式
+let highlightDate = null;   // 雙擊日期欄高亮整欄
+
+// 依目前檢視(單月/全年)產生日期欄
+function daysForView(){
+  if (fullYear){
+    const out = [];
+    for (let m = 1; m <= 12; m++){ const n = daysInMonth(curYear, m); for (let d = 1; d <= n; d++){ const dow = new Date(curYear, m-1, d).getDay(); out.push({ d, date: dateStr(curYear, m, d), wd: WEEKDAY[dow], weekend: dow===0||dow===6, m }); } }
+    return out;
+  }
+  return buildDays(curYear, curMonth);
+}
 
 function periodOfType(id){ const t=leaveTypes.find(x=>x.id===id); const s=t?(t.short_name||t.name||''):''; if(/早/.test(s))return 'morning'; if(/午/.test(s))return 'afternoon'; return 'full'; }
 function isBizType(id){ const t=leaveTypes.find(x=>x.id===id); return /差/.test(t?(t.short_name||t.name||''):''); }
@@ -222,15 +239,15 @@ function resolveCell(lv, legend){
 
 function render(data){
   LAST = data;
-  const year = data.year, month = data.month;
-  const days = buildDays(year, month);
+  const days = daysForView();
   const holidays = new Set(data.holidays || []);
   const legend = (data.legend && Object.keys(data.legend).length) ? data.legend : DEFAULT_COLORS;
   const today = todayStr();
+  const viewLabel = fullYear ? `${curYear} 全年` : `${curYear} 年 ${curMonth} 月`;
 
   document.getElementById('title').textContent = '全部排休';
-  document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${year} 年 ${month} 月`;
-  document.getElementById('monthLabel').textContent = `${year} 年 ${month} 月`;
+  document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${viewLabel}`;
+  document.getElementById('monthLabel').textContent = viewLabel;
 
   // 圖例
   const leg = document.getElementById('legend');
@@ -253,7 +270,10 @@ function render(data){
     const isHol = holidays.has(day.date);
     const cls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
     const todayCls = day.date === today ? ' today' : '';
-    html += `<th class="day ${cls}${todayCls}"><div>${day.d}</div><div class="wd">${day.wd}</div></th>`;
+    const hlCls = day.date === highlightDate ? ' hl' : '';
+    const mstart = (fullYear && day.d === 1) ? ' mstart' : '';
+    const mlabel = (fullYear && day.d === 1) ? `<div class="mtag">${day.m}月</div>` : '';
+    html += `<th class="day ${cls}${todayCls}${hlCls}${mstart}" data-date="${day.date}">${mlabel}<div>${day.d}</div><div class="wd">${day.wd}</div></th>`;
   });
   html += '</tr></thead><tbody>';
 
@@ -274,14 +294,16 @@ function render(data){
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
         const todayCls = day.date === today ? ' today' : '';
+        const hlCls = day.date === highlightDate ? ' hl' : '';
+        const mstart = (fullYear && day.d === 1) ? ' mstart' : '';
         const pick = (rangeMode && rangeEmp===m.id && rangeStart===day.date) ? ' picking' : '';
         const cell = resolveCell(m.leaves ? m.leaves[day.date] : null, legend);
         if (cell){
           const halfCls = cell.p === 'full' ? '' : ' half';
           const chipCls = cell.p === 'full' ? 'chip' : `chip ${cell.p}`;
-          html += `<td class="day ${baseCls}${todayCls}${halfCls}${pick}"${empAttr} data-date="${day.date}"><div class="${chipCls}" style="background:${cell.color}">${cell.label}</div></td>`;
+          html += `<td class="day ${baseCls}${todayCls}${hlCls}${mstart}${pick}"${empAttr} data-date="${day.date}"><div class="${chipCls}" style="background:${cell.color}">${cell.label}</div></td>`;
         } else {
-          html += `<td class="day ${baseCls}${todayCls}${pick}"${empAttr} data-date="${day.date}"></td>`;
+          html += `<td class="day ${baseCls}${todayCls}${hlCls}${mstart}${pick}"${empAttr} data-date="${day.date}"></td>`;
         }
       });
       html += '</tr>';
@@ -319,7 +341,7 @@ async function initEditing(){
   rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
   const table = document.getElementById('table');
   table.addEventListener('click', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
-  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCellDbl(td.dataset.emp, td.dataset.date); });
+  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ onCellDbl(td.dataset.emp, td.dataset.date); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
 }
 
 function onCell(empId, date){
@@ -435,11 +457,15 @@ async function load(){
   }
 }
 
-function go(deltaMonths){
-  const d = new Date(curYear, curMonth - 1 + deltaMonths, 1);
-  curYear = d.getFullYear();
-  curMonth = d.getMonth() + 1;
-  load();
+function go(delta){
+  if (fullYear){ curYear += delta; }
+  else { const d = new Date(curYear, curMonth - 1 + delta, 1); curYear = d.getFullYear(); curMonth = d.getMonth() + 1; }
+  load().then(scrollToToday);
+}
+function scrollToToday(){
+  const sc = document.querySelector('.scroll');
+  const th = document.querySelector(`th.day[data-date="${todayStr()}"]`);
+  if (sc && th) sc.scrollLeft = Math.max(0, th.offsetLeft - 140);
 }
 
 document.getElementById('prev').onclick = () => go(-1);
@@ -447,10 +473,16 @@ document.getElementById('next').onclick = () => go(1);
 document.getElementById('todayBtn').onclick = () => {
   const t = new Date();
   curYear = t.getFullYear(); curMonth = t.getMonth() + 1;
-  load();
+  load().then(scrollToToday);
+};
+document.getElementById('yearBtn').onclick = () => {
+  fullYear = !fullYear;
+  document.getElementById('yearBtn').classList.toggle('today-btn', fullYear);
+  document.getElementById('yearBtn').textContent = fullYear ? '單月' : '全年';
+  load().then(scrollToToday);
 };
 
-load();
+load().then(scrollToToday);
 </script>
 </body>
 </html>
