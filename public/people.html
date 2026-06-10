@@ -9,7 +9,7 @@
   .checks{ display:flex; flex-wrap:wrap; gap:10px; }
   .checks label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; color:var(--ink); }
   .num{ width:60px; }
-  .note{ color:var(--muted); font-size:13px; margin-bottom:12px; }
+  .note{ color:var(--muted); font-size:14px; margin-bottom:12px; }
   .tag.amber{ background:#fef3c7; color:#92400e; }
   .selbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
   .filterbox{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
@@ -129,7 +129,7 @@ function empForm(e){
       <div class="field" style="flex:1;"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
       <div class="field" style="flex:1;"><label>角色</label><select id="f_role"><option value="user"${cur.role!=='admin'?' selected':''}>一般</option><option value="admin"${cur.role==='admin'?' selected':''}>管理員</option></select></div>
     </div>
-    <div class="muted" style="font-size:12px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。管理員才能進設定管理與編輯排休。</div>
+    <div class="muted" style="font-size:14px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。管理員才能進設定管理與編輯排休。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if (!name){ alert('請輸入姓名'); return false; }
@@ -174,7 +174,7 @@ function bulkEditForm(){
   const checks = depts.map(d=>`<label><input type="checkbox" class="bc" value="${esc(d.id)}"/> ${esc(d.name)}</label>`).join('');
   const statusOpts = `<option value="">（不改）</option>` + Object.entries(STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
   modal(`批次編輯 ${selected.size} 人`, `
-    <div class="muted" style="font-size:12px;margin-bottom:8px;">留空＝不更動。勾選部門會「覆蓋」這些人的部門。</div>
+    <div class="muted" style="font-size:14px;margin-bottom:8px;">留空＝不更動。勾選部門會「覆蓋」這些人的部門。</div>
     <div class="field"><label>設定部門（覆蓋）</label><div class="checks">${checks}</div>
       <label style="margin-top:6px;"><input type="checkbox" id="b_setdept"/> 套用上面的部門設定</label></div>
     <div class="field"><label>設定狀態</label><select id="b_status">${statusOpts}</select></div>
@@ -244,7 +244,7 @@ function renderDept(){
         <thead><tr><th>排序</th><th>部門名稱</th><th>員工人數</th><th></th></tr></thead>
         <tbody>${rows||'<tr><td colspan="4" class="empty">尚無部門</td></tr>'}</tbody>
       </table></div>
-      <div class="muted" style="font-size:12px;margin-top:8px;">排序欄可直接修改，停止輸入 0.5 秒後自動儲存。</div>
+      <div class="muted" style="font-size:14px;margin-top:8px;">排序欄可直接修改，停止輸入 0.5 秒後自動儲存。</div>
     </div>`;
   document.getElementById('addD').onclick = ()=>deptForm();
   document.querySelectorAll('[data-dedit]').forEach(b=>b.onclick=()=>deptForm(depts.find(x=>x.id===b.dataset.dedit)));
