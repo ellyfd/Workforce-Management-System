@@ -76,6 +76,9 @@ async function init(){
   try {
     // 個人連結：me.html?key=英文名 → 自動綁定並帶出本人
     const key = (new URLSearchParams(location.search).get('key') || '').trim();
+    // 與 /api/me 並行預抓，省下串行往返；改走綁定流程時，過期結果由世代防護作廢
+    const pTypes = api('/api/leave-types').then(r => r.json());
+    const pLeaves = loadMyLeaves();
     const res = await api('/api/me');
     if (res.ok) {
       me = await res.json();
@@ -88,8 +91,8 @@ async function init(){
     } else {
       throw new Error('HTTP ' + res.status);
     }
-    leaveTypes = await (await api('/api/leave-types')).json();
-    await loadMyLeaves();
+    leaveTypes = await pTypes;
+    await pLeaves;
     showCalendar();
   } catch (e) {
     app.innerHTML = `<div class="status err">連線失敗：${e.message}<br>請確認 API_BASE 設定正確（目前：${API_BASE}）</div>`;
@@ -106,6 +109,7 @@ async function bindByKey(key){
   if (!emp) return false; // 找不到 → 交回呼叫端處理（顯示清單）
   const r = await api('/api/bind', { method:'POST', body: JSON.stringify({ employee_id: emp.id }) });
   if (!r.ok) return false;
+  sessionStorage.removeItem('dev_me_cache'); // 身分變更 → 作廢側欄快取
   await init();
   return true;
 }
@@ -139,23 +143,28 @@ async function showLogin(){
 async function bind(employeeId){
   const res = await api('/api/bind', { method:'POST', body: JSON.stringify({ employee_id: employeeId }) });
   if (!res.ok) { alert('綁定失敗'); return; }
+  sessionStorage.removeItem('dev_me_cache'); // 身分變更 → 作廢側欄快取
   init();
 }
 
+let leavesGen = 0; // 世代計數：重新載入/重新綁定時，讓較舊的回應作廢
 async function loadMyLeaves(){
-  const recs = await (await api(`/api/my-leaves?year=${cur.getFullYear()}`)).json();
+  const gen = ++leavesGen;
+  const y = cur.getFullYear();
+  // 我的休假 + 該年假日（國定 + 公司假日如員工旅遊）並行載入；未綁定時(401)視為無資料
+  const [recs, hs] = await Promise.all([
+    api(`/api/my-leaves?year=${y}`).then(r => r.ok ? r.json() : []),
+    fetch(`${API_BASE}/api/holidays?year=${y}&names=1`, { cache:'no-store' }).then(r => r.json()).catch(() => []),
+  ]);
+  if (gen !== leavesGen) return; // 期間已發出更新的載入 → 丟棄這批
   myLeaves = {}; // { date: { full?/am?/pm?: {id,leave_type_id,period} } }
   for (const r of recs){
     const slot = r.period==='morning' ? 'am' : r.period==='afternoon' ? 'pm' : 'full';
     (myLeaves[r.date] ||= {})[slot] = { id: r.id, leave_type_id: r.leave_type_id, period: r.period || 'full' };
   }
-  // 載入該年假日（國定 + 公司假日如員工旅遊）：顯示用 + 區間略過用
-  try {
-    const hs = await (await fetch(`${API_BASE}/api/holidays?year=${cur.getFullYear()}&names=1`, { cache:'no-store' })).json();
-    holidays = new Set((hs||[]).map(h => h.date));
-    holidayMap = {}; holidayTypes = {};
-    (hs||[]).forEach(h => { holidayMap[h.date] = h.name; holidayTypes[h.date] = h.type || 'national'; });
-  } catch (_) { holidays = new Set(); holidayMap = {}; holidayTypes = {}; }
+  holidays = new Set((hs||[]).map(h => h.date));
+  holidayMap = {}; holidayTypes = {};
+  (hs||[]).forEach(h => { holidayMap[h.date] = h.name; holidayTypes[h.date] = h.type || 'national'; });
 }
 // 是否為「出差」類假別（出差連週末/假日都算,不略過）
 function isBizType(typeId){ return /差/.test(labelOf(typeId)); }
@@ -261,7 +270,7 @@ function showCalendar(){
       </details>
     </div>`;
 
-  document.getElementById('logout').onclick = () => { localStorage.removeItem('dev_device_token'); location.reload(); };
+  document.getElementById('logout').onclick = () => { localStorage.removeItem('dev_device_token'); sessionStorage.removeItem('dev_me_cache'); location.reload(); };
   document.getElementById('prev').onclick = async () => { cur = new Date(y, m-2, 1); rangeStart=null; await loadMyLeaves(); showCalendar(); };
   document.getElementById('next').onclick = async () => { cur = new Date(y, m, 1); rangeStart=null; await loadMyLeaves(); showCalendar(); };
   document.getElementById('ltype').onchange = (ev) => { selType = ev.target.value; };

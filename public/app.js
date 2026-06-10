@@ -4,6 +4,22 @@
   const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
   const DEVICE = localStorage.getItem('dev_device_token') || '';
 
+  // /api/me 的 sessionStorage 快取：換頁先用快取畫側欄、背景再驗證，
+  // 讓導覽不必每頁都等一趟網路往返。快取綁定 device token，換 token 即失效。
+  const ME_CACHE_KEY = 'dev_me_cache';
+  function readMeCache() {
+    try {
+      const c = JSON.parse(sessionStorage.getItem(ME_CACHE_KEY) || 'null');
+      return c && c.t === DEVICE && c.me ? c.me : null;
+    } catch (_) { return null; }
+  }
+  function writeMeCache(me) {
+    try {
+      if (me) sessionStorage.setItem(ME_CACHE_KEY, JSON.stringify({ t: DEVICE, me }));
+      else sessionStorage.removeItem(ME_CACHE_KEY);
+    } catch (_) {}
+  }
+
   // 線條圖示（lucide 風格，stroke 繼承文字色）
   const svg = (paths) => `<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   const ICONS = {
@@ -177,6 +193,7 @@
       const r = await api('/api/my-profile', { method: 'PUT', body: JSON.stringify({ deputy_1: d1, deputy_2: d2 }) });
       if (!r.ok) { alert('儲存失敗'); return; }
       ctx.me.deputy_1 = d1; ctx.me.deputy_2 = d2;
+      writeMeCache(ctx.me); // 同步側欄快取，避免下次換頁誤判資料變更而重載
       renderProfile(ctx, false);
     };
   }
@@ -226,8 +243,22 @@
   }
 
   async function mount() {
+    const cached = readMeCache();
+    if (cached) {
+      renderShell(cached); // 先用快取立即畫殼，不等網路
+      const fresh = await fetchMe(); // 背景驗證
+      writeMeCache(fresh);
+      // 已解綁或資料變了（換人/角色/職代）→ 重載一次套用；快取已更新，不會迴圈
+      if (!fresh || JSON.stringify(fresh) !== JSON.stringify(cached)) location.reload();
+      return;
+    }
     const me = await fetchMe();
-    if (!me) { await showBindGate(); return; } // 綁定後會自動 reload
+    if (!me) { resolveReady({ me: null, isAdmin: false }); await showBindGate(); return; } // 綁定後會自動 reload
+    writeMeCache(me);
+    renderShell(me);
+  }
+
+  function renderShell(me) {
     const isAdmin = !!(me && me.role === 'admin');
     window.App.me = me; window.App.isAdmin = isAdmin;
     document.body.classList.toggle('is-admin', isAdmin);
@@ -255,9 +286,15 @@
       }
     }
     document.dispatchEvent(new CustomEvent('app:ready', { detail: { me, isAdmin } }));
+    resolveReady({ me, isAdmin });
   }
 
-  window.App = { API_BASE, esc, api, adminApi, params, me: null, isAdmin: false };
+  let resolveReady;
+  window.App = {
+    API_BASE, esc, api, adminApi, params, me: null, isAdmin: false,
+    // 頁面可 await App.ready 取得身分（殼畫好後 resolve；未綁定時 me 為 null）
+    ready: new Promise((r) => { resolveReady = r; }),
+  };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();

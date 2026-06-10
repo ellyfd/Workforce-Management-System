@@ -49,7 +49,6 @@
 <script>
 const { esc } = App;
 const PERIOD = { full:'整天', morning:'上午', afternoon:'下午' };
-const DEVICE = localStorage.getItem('dev_device_token') || '';
 let cur = new Date();
 let DEPTSEL = new Set();
 let me = null;
@@ -59,17 +58,16 @@ function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDa
 function greetWord(){ const h = new Date().getHours(); return h < 11 ? '早安' : h < 18 ? '午安' : '晚安'; }
 
 async function boot(){
-  // 取得本裝置綁定者(打招呼用)
-  try { if (DEVICE){ const r = await fetch(`${App.API_BASE}/api/me`, { headers:{ 'X-Device-Token': DEVICE } }); if (r.ok) me = await r.json(); } } catch(_){}
-  document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
-  // 部門勾選
-  try {
-    const ds = await (await fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'})).json();
+  load(); // 當日資料不依賴身分，最先發出
+  // 部門勾選（與儀表板資料並行載入）
+  fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'}).then(r=>r.json()).then(ds=>{
     document.getElementById('deptboxes').innerHTML = ds.map(d=>
       `<label><input type="checkbox" class="df" value="${esc(d.id)}"/> ${esc(d.name)}</label>`).join('') || '<span class="muted">無部門</span>';
     document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); load(); });
-  } catch(_){}
-  load();
+  }).catch(()=>{});
+  // 身分由 app.js 提供（含快取），不再自打 /api/me（打招呼用）
+  me = (await App.ready).me;
+  document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
 }
 
 async function load(){
@@ -120,7 +118,7 @@ function render(s){
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
         <b>休假人員 <span class="muted">${list.length} 人</span></b>
-        ${(me&&me.role==='admin')?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
+        ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
     </div>`;

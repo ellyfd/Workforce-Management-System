@@ -517,11 +517,13 @@ export default {
 };
 
 async function buildCalendar(env, year, month) {
+  // 只撈該年度（前端單月/全年檢視都以年為單位重新取），避免逐年累積的舊資料拖慢查詢與肥大回應。
   const [depts, emps, types, recs, hols] = await Promise.all([
     env.DB.prepare("SELECT * FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
     env.DB.prepare("SELECT * FROM employees WHERE status = 'active' ORDER BY sort_order").all(),
     env.DB.prepare('SELECT * FROM leave_types ORDER BY sort_order').all(),
-    env.DB.prepare('SELECT * FROM leave_records').all(),
+    env.DB.prepare('SELECT * FROM leave_records WHERE date >= ? AND date <= ?')
+      .bind(`${year}-01-01`, `${year}-12-31`).all(),
     env.DB.prepare('SELECT date FROM holidays').all(),
   ]);
 
@@ -534,17 +536,14 @@ async function buildCalendar(env, year, month) {
   // 預設等同原 Excel 公式：休=1、午休/早休=0.5、其他=0，可於休假設定頁調整。
   const leavesByEmp = {};
   const yearTotals = {};
-  const yearPrefix = String(year) + '-';
   for (const r of recs.results) {
     const t = typeById[r.leave_type_id];
     const slot = r.period === 'morning' ? 'am' : r.period === 'afternoon' ? 'pm' : 'full';
     const cell = { label: t ? t.short_name || t.name : '休', period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
     const days = (leavesByEmp[r.employee_id] ||= {});
     (days[r.date] ||= {})[slot] = cell;
-    if (r.date && r.date.startsWith(yearPrefix)) {
-      const w = t ? Number(t.day_value) || 0 : 0;
-      if (w) yearTotals[r.employee_id] = (yearTotals[r.employee_id] || 0) + w;
-    }
+    const w = t ? Number(t.day_value) || 0 : 0;
+    if (w) yearTotals[r.employee_id] = (yearTotals[r.employee_id] || 0) + w;
   }
 
   const departments = depts.results
