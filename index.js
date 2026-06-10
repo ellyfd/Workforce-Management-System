@@ -243,6 +243,16 @@ export default {
         return json({ ok: true, count: ids.length });
       }
 
+      // 管理端依「員工 + 日期」刪除（全部排休的格子沒有 record id，用這個刪整格/整段）
+      if (pathname === '/api/admin/leaves/delete-by-date' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const { employee_id, dates = [] } = await request.json();
+        if (!employee_id || !dates.length) return json({ error: 'missing_fields' }, 400);
+        await runInBatches(dates, (d) =>
+          env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ? AND date = ?').bind(employee_id, d).run());
+        return json({ ok: true, count: dates.length });
+      }
+
       const adminDel = pathname.match(/^\/api\/admin\/leaves\/(.+)$/);
       if (adminDel && method === 'DELETE') {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
@@ -452,7 +462,7 @@ async function buildCalendar(env, year, month) {
       name: d.name,
       members: emps.results
         .filter((e) => safeIds(e.department_ids).includes(d.id))
-        .map((e) => ({ name: e.name, code: e.english_name || '', leaves: leavesByEmp[e.id] || {} })),
+        .map((e) => ({ id: e.id, name: e.name, code: e.english_name || '', leaves: leavesByEmp[e.id] || {} })),
     }))
     .filter((d) => d.members.length > 0);
 
