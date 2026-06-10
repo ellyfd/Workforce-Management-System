@@ -4,15 +4,25 @@
   const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
   const DEVICE = localStorage.getItem('dev_device_token') || '';
 
+  // 線條圖示（lucide 風格，stroke 繼承文字色）
+  const svg = (paths) => `<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  const ICONS = {
+    dash: svg('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>'),
+    me: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/><path d="m9.5 16.5 2 2 3.5-3.5"/>'),
+    all: svg('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>'),
+    people: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+    leave: svg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>'),
+    sync: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>'),
+  };
   const NAV_MAIN = [
-    { href: 'dashboard.html', label: '儀表板' },
-    { href: 'me.html', label: '我的排休' },
-    { href: 'index.html', label: '全部排休' },
+    { href: 'dashboard.html', label: '儀表板', icon: 'dash' },
+    { href: 'me.html', label: '我的排休', icon: 'me' },
+    { href: 'index.html', label: '全部排休', icon: 'all' },
   ];
   const NAV_ADMIN = [
-    { href: 'people.html', label: '人員管理' },
-    { href: 'leave-settings.html', label: '休假設定' },
-    { href: 'settings.html', label: 'DPC 同步' },
+    { href: 'people.html', label: '人員管理', icon: 'people' },
+    { href: 'leave-settings.html', label: '休假設定', icon: 'leave' },
+    { href: 'settings.html', label: 'DPC 同步', icon: 'sync' },
   ];
   const ADMIN_PAGES = ['people', 'leave-settings', 'settings'];
 
@@ -54,7 +64,7 @@
     return items.map((it) => {
       const base = it.href.replace(/\.html$/, '');
       const active = base === cur ? ' active' : '';
-      return `<a class="navlink${active}" href="${it.href}">${it.label}</a>`;
+      return `<a class="navlink${active}" href="${it.href}">${ICONS[it.icon] || ''}<span>${it.label}</span></a>`;
     }).join('');
   }
   function buildSidebar(isAdmin, me) {
@@ -65,7 +75,7 @@
         <span class="uinfo"><b>${esc(me.name || '')}</b>${me.english_name ? `<small>${esc(me.english_name)}</small>` : ''}</span>
         <span class="chev">›</span>
       </button>` : '';
-    return `<aside class="app-sidebar" id="appSidebar"><div class="brand">開發處休假表</div>${user}<nav class="app-nav">${nav}</nav></aside>`;
+    return `<aside class="app-sidebar" id="appSidebar">${user || '<div class="brand">開發處休假表</div>'}<nav class="app-nav">${nav}</nav></aside>`;
   }
 
   /* ── 個人資料抽屜 ─────────────────────────────────── */

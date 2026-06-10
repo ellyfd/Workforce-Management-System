@@ -22,15 +22,16 @@ body{
   overflow-y:auto; z-index:60; display:flex; flex-direction:column;
 }
 .app-sidebar .brand{ padding:18px 16px 14px; border-bottom:1px solid var(--border); font-size:15px; font-weight:600; letter-spacing:.01em; }
-.app-nav{ padding:6px 8px; flex:1; }
-.app-nav .nav-sect{ color:var(--muted); font-size:14px; font-weight:600; padding:14px 10px 6px; letter-spacing:.08em; }
+.app-nav{ padding:8px 10px; flex:1; }
+.app-nav .nav-sect{ color:var(--muted); font-size:14px; font-weight:500; padding:16px 10px 6px; }
 .app-nav .navlink{
-  display:block; padding:9px 10px 9px 12px; border-radius:6px;
-  color:var(--ink); text-decoration:none; font-size:14px; margin:1px 0;
-  border-left:2px solid transparent;
+  display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px;
+  color:var(--ink); text-decoration:none; font-size:14px; margin:2px 0;
 }
+.app-nav .navlink .ni{ width:18px; height:18px; flex:none; color:var(--muted); }
 .app-nav .navlink:hover{ background:#f3f4f6; }
-.app-nav .navlink.active{ background:var(--blue-bg); color:var(--blue); font-weight:600; border-left-color:var(--blue); }
+.app-nav .navlink.active{ background:var(--blue-bg); color:var(--blue); font-weight:600; }
+.app-nav .navlink.active .ni{ color:var(--blue); }
 
 /* ── 手機頂列 + 抽屜 ──────────────────────────────── */
 .app-topbar{ display:none; }
