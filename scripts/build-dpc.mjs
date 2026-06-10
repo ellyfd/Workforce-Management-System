@@ -8,7 +8,7 @@
 //   DPC_DISPLAY_NAME（選填，顯示在開發處表上的區塊名稱，預設 '3D team（DPC）'）
 //   SYNC_START / SYNC_END（選填，撈取日期範圍 YYYY-MM-DD）
 //
-// Node 20+（內建 fetch）。輸出檔：dpc.json（位於 repo 根目錄）。
+// Node 20+（內建 fetch）。輸出檔：public/dpc.json（由 Worker 當靜態資源服務，網頁合併顯示）。
 
 import { writeFileSync } from 'node:fs';
 
@@ -88,7 +88,7 @@ async function main() {
     members: [...members.values()],
   };
 
-  writeFileSync('dpc.json', JSON.stringify(out, null, 2) + '\n');
+  writeFileSync('public/dpc.json', JSON.stringify(out, null, 2) + '\n');
   console.log(
     `dpc.json 完成：${out.members.length} 人、${records.length} 筆休假（${START} ~ ${END}）`,
   );

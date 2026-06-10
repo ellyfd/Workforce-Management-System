@@ -138,6 +138,8 @@
 const params = new URLSearchParams(location.search);
 // 預設打部署好的 Worker；同源服務時這個絕對網址一樣會通，CORS 已開放。
 const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
+// DPC（3D team）即時資料：由 GitHub Action 從 Base44 同步成 public/dpc.json，與 D1 資料合併顯示。
+const DPC_URL = params.get('dpc') || './dpc.json';
 
 const WEEKDAY = ['日','一','二','三','四','五','六'];
 const DEFAULT_COLORS = { '休':'#22c55e','差':'#ec4899','午休':'#a855f7','病':'#f97316','員旅':'#9ca3af','早休':'#3b82f6' };
@@ -164,6 +166,18 @@ function buildDays(year, month){
 function colorFor(label, legend){
   if (legend && legend[label]) return legend[label];
   return DEFAULT_COLORS[label] || '#64748b';
+}
+
+// 把 Base44 即時同步的 DPC 區塊合併進 D1 來的資料：
+// 取代同名(3D team（DPC）)部門、補進 DPC 的假別色與國定假日。
+function mergeDpc(base, dpc){
+  if (!dpc) return base;
+  base.legend = { ...(dpc.legend || {}), ...(base.legend || {}) };
+  base.holidays = [...new Set([...(base.holidays || []), ...(dpc.holidays || [])])];
+  const name = dpc.department_name || '3D team（DPC）';
+  base.departments = (base.departments || []).filter(d => d.name !== name);
+  base.departments.push({ name, members: dpc.members || [] });
+  return base;
 }
 
 // 由假別文字判斷是否為半天（早＝上午、午＝下午），決定色塊占滿或只占一半。
@@ -281,7 +295,21 @@ async function load(){
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
-    render(data);
+
+    // DPC（3D team）即時資料為選用：由 Base44 同步到 dpc.json，抓不到就略過。
+    let dpc = null;
+    try {
+      const r2 = await fetch(DPC_URL, { cache: 'no-store' });
+      if (r2.ok) dpc = await r2.json();
+    } catch (_) { /* ignore */ }
+
+    render(mergeDpc(data, dpc));
+
+    if (dpc && dpc.updated_at) {
+      const foot = document.getElementById('footer');
+      const dpcTxt = `DPC 即時同步：${new Date(dpc.updated_at).toLocaleString('zh-TW')}`;
+      foot.textContent = foot.textContent ? `${foot.textContent}　|　${dpcTxt}` : dpcTxt;
+    }
   } catch (e) {
     status.className = 'status err';
     status.textContent = `讀取資料失敗：${e.message}（API：${API_BASE}/api/calendar）`;
