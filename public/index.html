@@ -28,7 +28,7 @@
   }
   .page { padding: 12px; max-width: 100%; }
   header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
-  header.top h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  header.top h1 { font-size: 20px; margin: 0; font-weight: 600; }
   header.top .sub { color: var(--muted); font-size:14px; }
   header.top .spacer { flex: 1; }
   header.top a.nav-link { font-size:14px; color: var(--blue); text-decoration: none; }
@@ -40,7 +40,7 @@
     border: 1px solid var(--border); background: #fff; padding: 6px 12px;
   }
   .toolbar button:hover { background: #f3f4f6; }
-  .toolbar .month-label { font-weight: 700; min-width: 110px; text-align: center; }
+  .toolbar .month-label { font-weight: 600; min-width: 110px; text-align: center; }
   .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
@@ -64,7 +64,7 @@
   thead th {
     position: sticky; top: 0; z-index: 20;
     background: var(--bg); height: var(--head-h);
-    font-size:14px; color: #374151; font-weight: 600;
+    font-size:14px; color: #4b5563; font-weight: 500;
     text-align: center; padding: 0;
   }
   thead th.name { left: 0; z-index: 30; text-align: left; padding-left: 10px; min-width: var(--name-w); width: var(--name-w); }
@@ -82,7 +82,7 @@
     height: var(--row-h); padding: 2px 10px; text-align: left;
     box-shadow: 2px 0 3px rgba(0,0,0,.04);
   }
-  tbody td.name .n { font-size:14px; font-weight: 600; line-height: 1.15; }
+  tbody td.name .n { font-size:14px; font-weight: 500; line-height: 1.15; }
   tbody td.name .c { font-size:14px; color: var(--muted); line-height: 1.1; }
   tbody td.day { min-width: var(--day-w); width: var(--day-w); height: var(--row-h); padding: 3px; text-align: center; }
   tbody td.day.weekend { background: var(--weekend); }
@@ -93,26 +93,31 @@
   thead th.day.hl, tbody td.day.hl { background: #e0e7ff; }
   thead th.day.mstart, tbody td.day.mstart { border-left: 2px solid #c7d2fe; }
   thead th.day { cursor: default; }
-  thead th.day .mtag { font-size:14px; color: var(--blue); font-weight: 700; line-height: 1; }
+  thead th.day .mtag { font-size:14px; color: var(--blue); font-weight: 600; line-height: 1; }
   tr.emprow.dragging { opacity: .45; }
   tr.emprow.dragover td.name { box-shadow: inset 0 3px 0 var(--blue), 2px 0 3px rgba(0,0,0,.04); }
   td.name .grip { cursor: grab; color: var(--muted); }
 
   tr.dept td {
     position: sticky; left: 0; z-index: 12;
-    background: #eef2ff; color: #3730a3; font-weight: 700; font-size:14px;
+    background: #f8fafc; color: #475569; font-weight: 600; font-size:14px;
     padding: 5px 10px; height: 28px; border-right: none;
   }
 
   /* 假別色塊：整天填滿；半天只佔一半（早休＝上半、午休＝下半），格內字較小以塞進半格 */
   .chip {
     display: flex; align-items: center; justify-content: center;
-    height: 100%; border-radius: 6px; font-size:12px; font-weight: 600; color: #fff;
+    height: 100%; border-radius: 6px; font-size:12px; font-weight: 500; color: #fff;
+    white-space: nowrap; overflow: hidden; letter-spacing: 0;
   }
   td.day.half { display: flex; flex-direction: column; gap: 1px; }
-  td.day.half .chip { height: calc(50% - 1px); font-size:11px; line-height:1; }
+  td.day.half .chip { height: calc(50% - 1px); font-size:11px; line-height:1; padding:0; }
   td.day.half .chip.am { margin-bottom: auto; }
   td.day.half .chip.pm { margin-top: auto; }
+
+  /* 本人列：黃底（同今天欄） */
+  tr.merow td.name, tr.merow td.tot { background: #fef9c3; }
+  tr.merow td.day:not(.weekend):not(.holiday):not(.today) { background: #fefce8; }
 
   /* 年度累計休假日（同 Excel：休=1、午休/早休=0.5） */
   thead th.tot, tbody td.tot {
@@ -121,7 +126,7 @@
     background: #fff; font-variant-numeric: tabular-nums;
   }
   thead th.tot { z-index: 30; background: var(--bg); }
-  tbody td.tot { font-weight: 600; box-shadow: 2px 0 3px rgba(0,0,0,.04); }
+  tbody td.tot { font-weight: 500; box-shadow: 2px 0 3px rgba(0,0,0,.04); }
 
   .status { padding: 24px; color: var(--muted); font-size: 14px; }
   .err { color: #b91c1c; }
@@ -349,7 +354,8 @@ function render(data){
       anyMember = true;
       if (m.id){ EMP[m.id] = { name: m.name, leaves: m.leaves || {} }; EMP_DEPT[m.id] = di; DEPT_MEMBERS[di].push(m.id); }
       const empAttr = m.id ? ` data-emp="${m.id}"` : '';
-      const rowAttr = m.id ? ` class="emprow" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
+      const meRow = (m.id && window.App && App.me && App.me.id === m.id) ? ' merow' : '';
+      const rowAttr = m.id ? ` class="emprow${meRow}" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
       const tot = m.id != null ? (yearTotals[m.id] || 0) : 0;
       html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⋮⋮</span> ':''}${m.name||''}</div></td><td class="tot">${tot||''}</td>`;
       days.forEach(day=>{
@@ -525,6 +531,9 @@ async function fillRangeRow(empId, a, b, type){
 }
 
 let LAST = null; // 最近一次 render 用的資料（區間高亮重繪用）
+
+// 身分判定完成後重繪一次（補上本人列黃底/管理元素）
+document.addEventListener('app:ready', ()=>{ if (LAST) render(LAST); });
 
 async function load(){
   const status = document.getElementById('status');
