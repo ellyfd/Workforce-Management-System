@@ -385,11 +385,11 @@ export default {
       }
       if (pathname === '/api/admin/leave-types' && method === 'POST') {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
-        const { name, short_name = null, color = '#64748b', sort_order = 0 } = await request.json();
+        const { name, short_name = null, color = '#64748b', sort_order = 0, day_value = 0 } = await request.json();
         if (!name) return json({ error: 'missing_name' }, 400);
         const id = 'lt_' + crypto.randomUUID().slice(0, 8);
-        await env.DB.prepare('INSERT INTO leave_types (id, name, short_name, color, sort_order) VALUES (?,?,?,?,?)')
-          .bind(id, name, short_name, color, sort_order).run();
+        await env.DB.prepare('INSERT INTO leave_types (id, name, short_name, color, sort_order, day_value) VALUES (?,?,?,?,?,?)')
+          .bind(id, name, short_name, color, sort_order, Number(day_value) || 0).run();
         return json({ id });
       }
       const ltM = pathname.match(/^\/api\/admin\/leave-types\/(.+)$/);
@@ -397,8 +397,8 @@ export default {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const b = await request.json();
         await env.DB.prepare(
-          'UPDATE leave_types SET name = COALESCE(?,name), short_name = COALESCE(?,short_name), color = COALESCE(?,color), sort_order = COALESCE(?,sort_order) WHERE id = ?',
-        ).bind(b.name ?? null, b.short_name ?? null, b.color ?? null, b.sort_order ?? null, ltM[1]).run();
+          'UPDATE leave_types SET name = COALESCE(?,name), short_name = COALESCE(?,short_name), color = COALESCE(?,color), sort_order = COALESCE(?,sort_order), day_value = COALESCE(?,day_value) WHERE id = ?',
+        ).bind(b.name ?? null, b.short_name ?? null, b.color ?? null, b.sort_order ?? null, b.day_value ?? null, ltM[1]).run();
         return json({ ok: true });
       }
       if (ltM && method === 'DELETE') {
@@ -502,22 +502,19 @@ async function buildCalendar(env, year, month) {
   for (const t of types.results) legend[t.short_name || t.name] = t.color || '#64748b';
 
   // 每人每日可同時有 full / am / pm 三格（AM+PM 可並存），分槽存放。
-  // 同時計算「年度累計休假日」，規則同原 Excel 公式：
-  // COUNTIF(休) + 0.5*(午休+早休+上午休+下午休)；差/病/員旅/健等其他假別不計。
+  // 「年度累計休假日」依各假別在休假設定的「計入天數」(day_value) 加總；
+  // 預設等同原 Excel 公式：休=1、午休/早休=0.5、其他=0，可於休假設定頁調整。
   const leavesByEmp = {};
   const yearTotals = {};
   const yearPrefix = String(year) + '-';
   for (const r of recs.results) {
     const t = typeById[r.leave_type_id];
     const slot = r.period === 'morning' ? 'am' : r.period === 'afternoon' ? 'pm' : 'full';
-    const label = t ? t.short_name || t.name : '休';
-    const cell = { label, period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
+    const cell = { label: t ? t.short_name || t.name : '休', period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
     const days = (leavesByEmp[r.employee_id] ||= {});
     (days[r.date] ||= {})[slot] = cell;
     if (r.date && r.date.startsWith(yearPrefix)) {
-      let w = 0;
-      if (label === '休') w = slot === 'full' ? 1 : 0.5;
-      else if (/午休|早休/.test(label)) w = 0.5;
+      const w = t ? Number(t.day_value) || 0 : 0;
       if (w) yearTotals[r.employee_id] = (yearTotals[r.employee_id] || 0) + w;
     }
   }

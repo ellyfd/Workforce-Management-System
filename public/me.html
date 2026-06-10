@@ -179,14 +179,11 @@ function showCalendar(){
     if (!date.startsWith(monthPrefix)) continue;
     for (const lv of Object.values(slots)) sumByType[lv.leave_type_id] = (sumByType[lv.leave_type_id]||0) + leaveDays(lv.period);
   }
-  // 年度累計（同 Excel 公式：休=1 天、午休/早休=0.5 天，其他假別不計）
+  // 年度累計：依各假別在「休假設定」的計入天數(day_value)加總（例：休=1、午休/早休=0.5、出差=0）
+  const dayValueOf = (tid)=>{ const t = leaveTypes.find(x=>x.id===tid); return t ? (Number(t.day_value)||0) : 0; };
   let yearTot = 0;
   for (const slots of Object.values(myLeaves)){
-    for (const [slot, lv] of Object.entries(slots)){
-      const lab = labelOf(lv.leave_type_id);
-      if (lab === '休') yearTot += slot === 'full' ? 1 : 0.5;
-      else if (/午休|早休/.test(lab)) yearTot += 0.5;
-    }
+    for (const lv of Object.values(slots)) yearTot += dayValueOf(lv.leave_type_id);
   }
 
   const summary = Object.entries(sumByType).map(([tid,days])=>
