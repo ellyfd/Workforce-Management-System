@@ -410,7 +410,7 @@ function onCell(empId, date){
     fillRangeRow(who, a, b, selType);
     return;
   }
-  if (!selType){ alert('請先從上方「選擇假別」'); return; }
+  if (!selType){ if (slots) return; alert('請先從上方「選擇假別」'); return; } // 已有假→不提示,雙擊取消
   const slot = periodToSlot(periodOfType(selType));
   if (slots && slots[slot]) return; // 該時段已有 → 不重複填(取消請雙擊)
   fillCell(empId, date, selType);
