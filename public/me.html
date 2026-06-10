@@ -152,8 +152,11 @@ async function bind(employeeId){
 
 async function loadMyLeaves(){
   const recs = await (await api(`/api/my-leaves?year=${cur.getFullYear()}`)).json();
-  myLeaves = {};
-  for (const r of recs) myLeaves[r.date] = { id: r.id, leave_type_id: r.leave_type_id, period: r.period || 'full' };
+  myLeaves = {}; // { date: { full?/am?/pm?: {id,leave_type_id,period} } }
+  for (const r of recs){
+    const slot = r.period==='morning' ? 'am' : r.period==='afternoon' ? 'pm' : 'full';
+    (myLeaves[r.date] ||= {})[slot] = { id: r.id, leave_type_id: r.leave_type_id, period: r.period || 'full' };
+  }
   // 載入該年國定假日（區間請假用來略過）
   try {
     const hs = await (await fetch(`${API_BASE}/api/holidays?year=${cur.getFullYear()}`, { cache:'no-store' })).json();
@@ -182,9 +185,9 @@ function showCalendar(){
   // 本月假別小計（天數，半天計 0.5）
   const monthPrefix = `${y}-${String(m).padStart(2,'0')}`;
   const sumByType = {};
-  for (const [date, lv] of Object.entries(myLeaves)){
+  for (const [date, slots] of Object.entries(myLeaves)){
     if (!date.startsWith(monthPrefix)) continue;
-    sumByType[lv.leave_type_id] = (sumByType[lv.leave_type_id]||0) + leaveDays(lv.period);
+    for (const lv of Object.values(slots)) sumByType[lv.leave_type_id] = (sumByType[lv.leave_type_id]||0) + leaveDays(lv.period);
   }
   const summary = Object.entries(sumByType).map(([tid,days])=>
     `<span class="sumitem"><span class="dot" style="background:${colorOf(tid)}"></span>${labelOf(tid)} ${days} 天</span>`).join('');
@@ -198,11 +201,19 @@ function showCalendar(){
     const date = ymd(y,m,d);
     const dow = new Date(y, m-1, d).getDay();
     const we = dow===0 || dow===6;
-    const lv = myLeaves[date];
-    const half = lv && (lv.period==='morning'||lv.period==='afternoon') ? (lv.period==='morning'?' am':' pm') : '';
-    const chip = lv ? `<div class="chip${half}" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>` : '';
+    const slots = myLeaves[date];
     const picking = (rangeStart===date) ? ' picking' : '';
-    cells += `<div class="day${we?' we':''}${half?' half':''}${picking}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
+    let chip = '', halfCls = '';
+    if (slots){
+      if (slots.am && slots.pm){
+        halfCls = ' half';
+        chip = `<div class="chip am" style="background:${colorOf(slots.am.leave_type_id)}">${labelOf(slots.am.leave_type_id)}</div><div class="chip pm" style="background:${colorOf(slots.pm.leave_type_id)}">${labelOf(slots.pm.leave_type_id)}</div>`;
+      } else {
+        const lv = slots.full || slots.am || slots.pm;
+        chip = `<div class="chip" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>`;
+      }
+    }
+    cells += `<div class="day${we?' we':''}${halfCls}${picking}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
   }
 
   app.innerHTML = `
@@ -249,13 +260,14 @@ function showCalendar(){
   document.getElementById('rangeBtn').onclick = () => { rangeMode = !rangeMode; rangeStart = null; showCalendar(); };
   app.querySelectorAll('.day[data-date]').forEach(el => {
     el.onclick = () => onCell(el.dataset.date);
-    el.ondblclick = () => onCellDbl(el.dataset.date);
+    el.ondblclick = (ev) => onCellDbl(el.dataset.date, ev);
   });
 }
 
-// 單擊：區間模式選起訖；否則空白格填入（已填入的格子單擊不動作，雙擊才取消）
+function slotOf(period){ return period==='morning'?'am':period==='afternoon'?'pm':'full'; }
+// 單擊：區間模式選起訖；否則填入(該時段空白才填,雙擊才取消)
 function onCell(date){
-  const lv = myLeaves[date];
+  const slots = myLeaves[date];
   if (rangeMode){
     if (!selType){ alert('請先選擇假別'); return; }
     if (!rangeStart){ rangeStart = date; showCalendar(); return; }
@@ -265,32 +277,38 @@ function onCell(date){
     fillRange(a, b, selType);
     return;
   }
-  if (!lv){
-    if (!selType){ alert('請先從上方「選擇假別」'); return; }
-    addLeave(date, selType);
-  }
+  if (!selType){ alert('請先從上方「選擇假別」'); return; }
+  const slot = slotOf(periodOfType(selType));
+  if (slots && slots[slot]) return; // 該時段已有→不重複(取消請雙擊)
+  addLeave(date, selType);
 }
 
-// 雙擊已填入的格子＝取消；若屬一段連續假,問要刪單日還是整段
-function onCellDbl(date){
-  const lv = myLeaves[date];
-  if (!lv) return;
-  const run = buildDeleteRange(date);
-  if (run){
-    const whole = confirm(`這是一段連續 ${run.length} 天的「${labelOf(lv.leave_type_id)}」。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
-    if (whole) deleteIds(run.map(d => myLeaves[d].id));
-    else cancelLeave(lv.id);
-  } else if (confirm('取消這天的請假？')) {
-    cancelLeave(lv.id);
+// 雙擊取消；半天依滑鼠 Y 座標決定刪上午/下午;整天若屬連續段問刪單日/整段
+function onCellDbl(date, ev){
+  const slots = myLeaves[date];
+  if (!slots) return;
+  if (slots.full){
+    const lv = slots.full;
+    const run = buildDeleteRange(date);
+    if (run){
+      const whole = confirm(`這是一段連續 ${run.length} 天的「${labelOf(lv.leave_type_id)}」。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
+      if (whole) deleteIds(run.map(d => myLeaves[d].full.id));
+      else cancelLeave(lv.id);
+    } else if (confirm('取消這天的請假？')) cancelLeave(lv.id);
+    return;
   }
+  // 半天:依點擊上/下半挑 am/pm
+  let target = slots.am || slots.pm;
+  if (slots.am && slots.pm && ev){ const r = ev.target.closest('.day').getBoundingClientRect(); target = (ev.clientY < r.top + r.height/2) ? slots.am : slots.pm; }
+  if (target && confirm('取消這筆請假？')) cancelLeave(target.id);
 }
 
-// 找出包含 date 的連續同假別區段（往前後掃相鄰日）；長度>1 才回傳日期陣列
+// 連續同「整天假別」區段(往前後掃相鄰日);長度>1 才回傳
 function buildDeleteRange(date){
-  const lv = myLeaves[date];
-  if (!lv) return null;
-  const type = lv.leave_type_id;
-  const has = (s) => myLeaves[s] && myLeaves[s].leave_type_id === type;
+  const cur0 = myLeaves[date] && myLeaves[date].full;
+  if (!cur0) return null;
+  const type = cur0.leave_type_id;
+  const has = (s) => myLeaves[s] && myLeaves[s].full && myLeaves[s].full.leave_type_id === type;
   const dates = [date];
   let d = new Date(date + 'T00:00:00');
   while (true){ d.setDate(d.getDate()-1); const s = ymd(d.getFullYear(), d.getMonth()+1, d.getDate()); if (has(s)) dates.unshift(s); else break; }
