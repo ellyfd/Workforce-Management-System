@@ -100,7 +100,7 @@
       listEl.querySelectorAll('.binditem').forEach((b) => b.onclick = async () => {
         const r = await fetch(API_BASE + '/api/bind', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Device-Token': t }, body: JSON.stringify({ employee_id: b.dataset.id }) });
         if (!r.ok) { alert('綁定失敗，請重試'); return; }
-        location.reload();
+        location.href = 'me.html'; // 綁定後直接進我的排休
       });
     };
     draw();
