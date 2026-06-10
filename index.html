@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>開發處休假表</title>
+<style>
+  :root {
+    --border: #e5e7eb;
+    --muted: #6b7280;
+    --bg: #f9fafb;
+    --weekend: #fef2f2;
+    --today: #fef3c7;
+    --name-w: 120px;
+    --day-w: 44px;
+    --row-h: 40px;
+    --head-h: 46px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    color: #1f2937;
+    background: var(--bg);
+  }
+  .page { padding: 12px; max-width: 100%; }
+  header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  header.top h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  header.top .sub { color: var(--muted); font-size: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
+  .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #374151; }
+  .legend .dot { width: 14px; height: 14px; border-radius: 4px; }
+  .scroll {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    max-height: calc(100vh - 150px);
+    overscroll-behavior: contain;
+  }
+  table { border-collapse: separate; border-spacing: 0; width: max-content; }
+  th, td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  thead th {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg); height: var(--head-h);
+    font-size: 12px; color: #374151; font-weight: 600;
+    text-align: center; padding: 0;
+  }
+  thead th.name { left: 0; z-index: 30; text-align: left; padding-left: 10px; min-width: var(--name-w); width: var(--name-w); }
+  thead th.day { min-width: var(--day-w); width: var(--day-w); }
+  thead th.day .wd { font-size: 10px; color: var(--muted); font-weight: 400; }
+  thead th.day.weekend { color: #ef4444; background: var(--weekend); }
+  thead th.day.weekend .wd { color: #ef4444; }
+  tbody td.name {
+    position: sticky; left: 0; z-index: 10;
+    background: #fff; min-width: var(--name-w); width: var(--name-w);
+    height: var(--row-h); padding: 2px 10px; text-align: left;
+    box-shadow: 2px 0 3px rgba(0,0,0,.04);
+  }
+  tbody td.name .n { font-size: 13px; font-weight: 600; line-height: 1.15; }
+  tbody td.name .c { font-size: 11px; color: var(--muted); line-height: 1.1; }
+  tbody td.day { min-width: var(--day-w); width: var(--day-w); height: var(--row-h); padding: 3px; text-align: center; }
+  tbody td.day.weekend { background: var(--weekend); }
+  tr.dept td {
+    position: sticky; left: 0; z-index: 12;
+    background: #eef2ff; color: #3730a3; font-weight: 700; font-size: 12px;
+    padding: 5px 10px; height: 28px; border-right: none;
+  }
+  .chip {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff;
+  }
+  .status { padding: 24px; color: var(--muted); font-size: 14px; }
+  .err { color: #b91c1c; }
+  footer { color: var(--muted); font-size: 11px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1 id="title">開發處休假表</h1>
+    <span class="sub" id="subtitle"></span>
+  </header>
+  <div class="legend" id="legend"></div>
+  <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
+  <footer id="footer"></footer>
+</div>
+
+<script>
+/*
+ * 開發處休假表 — 免登入靜態檢視頁
+ * - 不需要 Base44、不需要登入。
+ * - 讀取一份 JSON 資料檔(預設 ./data.json,可用 ?data=<網址> 覆蓋)。
+ * - 資料檔可掛在 GitHub Pages、Cloudflare Pages、或任何能公開取得的網址。
+ */
+const WEEKDAY = ['日','一','二','三','四','五','六'];
+const DEFAULT_COLORS = { '休':'#22c55e','差':'#ec4899','午休':'#a855f7','病':'#f97316','員旅':'#9ca3af','早休':'#3b82f6' };
+
+function pad(n){ return String(n).padStart(2,'0'); }
+function dateStr(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
+function daysInMonth(y,m){ return new Date(y, m, 0).getDate(); }
+
+function getDataUrl(){
+  const p = new URLSearchParams(location.search).get('data');
+  return p || './data.json';
+}
+
+function buildDays(year, month){
+  const n = daysInMonth(year, month);
+  const out = [];
+  for (let d = 1; d <= n; d++){
+    const dow = new Date(year, month-1, d).getDay();
+    out.push({ d, date: dateStr(year, month, d), wd: WEEKDAY[dow], weekend: dow===0||dow===6 });
+  }
+  return out;
+}
+
+function colorFor(label, legend){
+  if (legend && legend[label]) return legend[label];
+  return DEFAULT_COLORS[label] || '#64748b';
+}
+
+function render(data){
+  const year = data.year, month = data.month;
+  const days = buildDays(year, month);
+  const holidays = new Set(data.holidays || []);
+  const legend = data.legend || DEFAULT_COLORS;
+
+  document.getElementById('title').textContent = data.title || '開發處休假表';
+  document.getElementById('subtitle').textContent = `${year} 年 ${month} 月`;
+
+  // 圖例
+  const leg = document.getElementById('legend');
+  leg.innerHTML = '';
+  Object.entries(legend).forEach(([label,color])=>{
+    const el = document.createElement('span');
+    el.className = 'item';
+    el.innerHTML = `<span class="dot" style="background:${color}"></span>${label}`;
+    leg.appendChild(el);
+  });
+
+  // 表頭
+  const table = document.getElementById('table');
+  let html = '<thead><tr><th class="name">姓名</th>';
+  days.forEach(day=>{
+    const we = day.weekend || holidays.has(day.date);
+    html += `<th class="day${we?' weekend':''}"><div>${day.d}</div><div class="wd">${day.wd}</div></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // 內容(依部門分組)
+  const colCount = days.length + 1;
+  (data.departments || []).forEach(dept=>{
+    html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
+    (dept.members || []).forEach(m=>{
+      html += `<tr><td class="name"><div class="n">${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
+      days.forEach(day=>{
+        const we = day.weekend || holidays.has(day.date);
+        const mark = m.leaves ? m.leaves[day.date] : null;
+        if (mark){
+          html += `<td class="day${we?' weekend':''}"><div class="chip" style="background:${colorFor(mark,legend)}">${mark}</div></td>`;
+        } else {
+          html += `<td class="day${we?' weekend':''}"></td>`;
+        }
+      });
+      html += '</tr>';
+    });
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+
+  document.getElementById('status').style.display = 'none';
+  table.style.display = '';
+  if (data.updated_at) document.getElementById('footer').textContent = `資料更新時間：${data.updated_at}`;
+}
+
+async function load(){
+  const url = getDataUrl();
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    render(data);
+  } catch (e) {
+    const s = document.getElementById('status');
+    s.className = 'status err';
+    s.textContent = `讀取資料失敗（${url}）：${e.message}`;
+  }
+}
+load();
+</script>
+</body>
+</html>
