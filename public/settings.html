@@ -52,7 +52,7 @@
       <button class="primary" id="syncBtn">立即同步</button>
       <span id="result" class="status-line"></span>
     </div>
-    <div class="muted" style="margin-top:10px;">方向為單向:Base44 → 系統。DPC 同仁在「我的排休」改的假,下次同步會以 Base44 為準覆蓋。</div>
+    <div class="muted" style="margin-top:10px;">方向為單向:Base44 → 系統。只同步 DPC 的人員與休假;<b>假別與假日不同步</b>,請於「休假設定」頁維護。DPC 同仁在「我的排休」改的假,下次同步會以 Base44 為準覆蓋。</div>
   </div>
   <footer id="footer"></footer>
 </div>
@@ -81,8 +81,7 @@ async function loadStatus(){
       <div class="kv">
         <span class="k">上次同步</span><span>${fmtTime(s.updated_at)}　${okTxt}</span>
         ${s.ok ? `<span class="k">部門</span><span>${s.department||'DPC'}</span>
-        <span class="k">員工 / 休假</span><span>${s.employees ?? '—'} 人 / ${s.leave_records ?? '—'} 筆</span>
-        <span class="k">假別 / 假日</span><span>${s.leave_types ?? '—'} 種 / ${s.holidays ?? '—'} 天</span>`
+        <span class="k">員工 / 休假</span><span>${s.employees ?? '—'} 人 / ${s.leave_records ?? '—'} 筆</span>`
         : `<span class="k">錯誤</span><span class="err">${s.error||''}</span>`}
       </div>`;
   } catch (e) {
