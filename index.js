@@ -252,10 +252,11 @@ export default {
       // 管理端依「員工 + 日期」刪除（全部排休的格子沒有 record id，用這個刪整格/整段）
       if (pathname === '/api/admin/leaves/delete-by-date' && method === 'POST') {
         if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
-        const { employee_id, dates = [] } = await request.json();
+        const { employee_id, dates = [], period } = await request.json();
         if (!employee_id || !dates.length) return json({ error: 'missing_fields' }, 400);
-        await runInBatches(dates, (d) =>
-          env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ? AND date = ?').bind(employee_id, d).run());
+        await runInBatches(dates, (d) => period
+          ? env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ? AND date = ? AND period = ?').bind(employee_id, d, period).run()
+          : env.DB.prepare('DELETE FROM leave_records WHERE employee_id = ? AND date = ?').bind(employee_id, d).run());
         return json({ ok: true, count: dates.length });
       }
 
@@ -478,15 +479,14 @@ async function buildCalendar(env, year, month) {
   const legend = {};
   for (const t of types.results) legend[t.short_name || t.name] = t.color || '#64748b';
 
+  // 每人每日可同時有 full / am / pm 三格（AM+PM 可並存），分槽存放。
   const leavesByEmp = {};
   for (const r of recs.results) {
     const t = typeById[r.leave_type_id];
-    // 帶上 period（full/morning/afternoon），讓總表能以半格呈現半天假。
-    (leavesByEmp[r.employee_id] ||= {})[r.date] = {
-      label: t ? t.short_name || t.name : '休',
-      period: r.period || 'full',
-      color: t ? t.color || '#64748b' : '#64748b',
-    };
+    const slot = r.period === 'morning' ? 'am' : r.period === 'afternoon' ? 'pm' : 'full';
+    const cell = { label: t ? t.short_name || t.name : '休', period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
+    const days = (leavesByEmp[r.employee_id] ||= {});
+    (days[r.date] ||= {})[slot] = cell;
   }
 
   const departments = depts.results

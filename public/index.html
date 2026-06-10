@@ -237,6 +237,22 @@ function resolveCell(lv, legend){
   return { label, p, color };
 }
 
+// 由分槽(full/am/pm)產生一格 <td>。full 佔滿;am 上半、pm 下半,可並存。
+function cellHTML(slots, cls, empAttr, date){
+  if (slots && (slots.full || slots.am || slots.pm)){
+    if (slots.full){
+      const c = slots.full, p = periodOf(c.label);
+      if (p === 'full') return `<td class="${cls}"${empAttr} data-date="${date}"><div class="chip" style="background:${c.color}">${c.label}</div></td>`;
+      return `<td class="${cls} half"${empAttr} data-date="${date}"><div class="chip ${p}" style="background:${c.color}">${c.label}</div></td>`;
+    }
+    let inner = '';
+    if (slots.am) inner += `<div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div>`;
+    if (slots.pm) inner += `<div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div>`;
+    return `<td class="${cls} half"${empAttr} data-date="${date}">${inner}</td>`;
+  }
+  return `<td class="${cls}"${empAttr} data-date="${date}"></td>`;
+}
+
 function render(data){
   LAST = data;
   const days = daysForView();
@@ -297,14 +313,9 @@ function render(data){
         const hlCls = day.date === highlightDate ? ' hl' : '';
         const mstart = (fullYear && day.d === 1) ? ' mstart' : '';
         const pick = (rangeMode && rangeEmp===m.id && rangeStart===day.date) ? ' picking' : '';
-        const cell = resolveCell(m.leaves ? m.leaves[day.date] : null, legend);
-        if (cell){
-          const halfCls = cell.p === 'full' ? '' : ' half';
-          const chipCls = cell.p === 'full' ? 'chip' : `chip ${cell.p}`;
-          html += `<td class="day ${baseCls}${todayCls}${hlCls}${mstart}${pick}"${empAttr} data-date="${day.date}"><div class="${chipCls}" style="background:${cell.color}">${cell.label}</div></td>`;
-        } else {
-          html += `<td class="day ${baseCls}${todayCls}${hlCls}${mstart}${pick}"${empAttr} data-date="${day.date}"></td>`;
-        }
+        const cls = `day ${baseCls}${todayCls}${hlCls}${mstart}${pick}`;
+        const slots = m.leaves ? m.leaves[day.date] : null;
+        html += cellHTML(slots, cls, empAttr, day.date);
       });
       html += '</tr>';
     });
@@ -341,12 +352,13 @@ async function initEditing(){
   rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
   const table = document.getElementById('table');
   table.addEventListener('click', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
-  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ onCellDbl(td.dataset.emp, td.dataset.date); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
+  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
 }
 
+function periodToSlot(p){ return p === 'morning' ? 'am' : p === 'afternoon' ? 'pm' : 'full'; }
 function onCell(empId, date){
   const emp = EMP[empId]; if (!emp) return;
-  const has = emp.leaves && emp.leaves[date];
+  const slots = emp.leaves && emp.leaves[date];
   if (rangeMode){
     if (!selType){ alert('請先選擇假別'); return; }
     if (!rangeStart || rangeEmp !== empId){ rangeEmp = empId; rangeStart = date; render(LAST); return; }
@@ -355,21 +367,39 @@ function onCell(empId, date){
     fillRangeRow(who, a, b, selType);
     return;
   }
-  if (!has){ if (!selType){ alert('請先從上方「選擇假別」'); return; } fillCell(empId, date, selType); }
+  if (!selType){ alert('請先從上方「選擇假別」'); return; }
+  const slot = periodToSlot(periodOfType(selType));
+  if (slots && slots[slot]) return; // 該時段已有 → 不重複填(取消請雙擊)
+  fillCell(empId, date, selType);
 }
-function onCellDbl(empId, date){
-  const emp = EMP[empId]; if (!emp || !(emp.leaves && emp.leaves[date])) return;
-  const run = buildRun(empId, date);
-  if (run){
-    const whole = confirm(`這是一段連續 ${run.length} 天的假。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
-    delByDate(empId, whole ? run : [date]);
-  } else if (confirm('取消這格的請假？')) {
-    delByDate(empId, [date]);
+function onCellDbl(empId, date, ev){
+  const emp = EMP[empId]; const slots = emp && emp.leaves && emp.leaves[date]; if (!slots) return;
+  if (slots.full && periodOf(slots.full.label) === 'full'){
+    const run = buildRun(empId, date);
+    if (run){
+      const whole = confirm(`這是一段連續 ${run.length} 天的假。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
+      delByDate(empId, whole ? run : [date]);
+    } else if (confirm('取消這格的請假？')) {
+      delByDate(empId, [date]);
+    }
+    return;
   }
+  // 半天：依滑鼠 Y 座標決定刪上午(上半)或下午(下半)
+  const td = ev && ev.target.closest('td.day');
+  let topHalf = true;
+  if (td){ const r = td.getBoundingClientRect(); topHalf = ev.clientY < r.top + r.height/2; }
+  let period = null;
+  const am = slots.am || (slots.full && periodOf(slots.full.label)==='am');
+  const pm = slots.pm || (slots.full && periodOf(slots.full.label)==='pm');
+  if (topHalf && am) period = 'morning';
+  else if (!topHalf && pm) period = 'afternoon';
+  else period = slots.am ? 'morning' : slots.pm ? 'afternoon' : null;
+  if (!period){ if (confirm('取消這格的請假？')) delByDate(empId, [date]); return; }
+  if (confirm(`取消這天的${period==='morning'?'上午':'下午'}休假？`)) delByDate(empId, [date], period);
 }
 function buildRun(empId, date){
-  const lv = EMP[empId].leaves; const here = lv[date]; if (!here) return null;
-  const lab = here.label; const has = (s)=> lv[s] && lv[s].label === lab;
+  const lv = EMP[empId].leaves; const here = lv[date]; if (!here || !here.full) return null;
+  const lab = here.full.label; const has = (s)=> lv[s] && lv[s].full && lv[s].full.label === lab;
   const dates = [date];
   let d = new Date(date+'T00:00:00');
   while (true){ d.setDate(d.getDate()-1); const s = dstr(d); if (has(s)) dates.unshift(s); else break; }
@@ -397,8 +427,10 @@ async function fillCell(empId, date, type){
   if (!r.ok){ alert('填入失敗（可能需要管理密鑰）'); return; }
   load();
 }
-async function delByDate(empId, dates){
-  const r = await App.adminApi('/api/admin/leaves/delete-by-date', { method:'POST', body: JSON.stringify({ employee_id: empId, dates }) });
+async function delByDate(empId, dates, period){
+  const body = { employee_id: empId, dates };
+  if (period) body.period = period;
+  const r = await App.adminApi('/api/admin/leaves/delete-by-date', { method:'POST', body: JSON.stringify(body) });
   if (!r.ok){ alert('刪除失敗'); return; }
   load();
 }
