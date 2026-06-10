@@ -145,7 +145,23 @@ export default {
       if (pathname === '/api/me' && method === 'GET') {
         const me = await meFromToken(env, token(request));
         if (!me) return json({ error: 'not_bound' }, 401);
-        return json({ id: me.id, name: me.name, english_name: me.english_name, role: me.role || 'user' });
+        return json({
+          id: me.id, name: me.name, english_name: me.english_name, role: me.role || 'user',
+          status: me.status || 'active', department_ids: safeIds(me.department_ids),
+          deputy_1: me.deputy_1 || null, deputy_2: me.deputy_2 || null,
+        });
+      }
+
+      // 本人可編輯的個人資料（目前開放：職代）
+      if (pathname === '/api/my-profile' && method === 'PUT') {
+        const me = await meFromToken(env, token(request));
+        if (!me) return json({ error: 'not_bound' }, 401);
+        const b = await request.json();
+        const d1 = b.deputy_1 || null, d2 = b.deputy_2 || null;
+        if (d1 === me.id || d2 === me.id) return json({ error: 'self_deputy' }, 400);
+        if (d1 && d1 === d2) return json({ error: 'duplicate_deputy' }, 400);
+        await env.DB.prepare('UPDATE employees SET deputy_1 = ?, deputy_2 = ? WHERE id = ?').bind(d1, d2, me.id).run();
+        return json({ ok: true });
       }
 
       if (pathname === '/api/my-leaves' && method === 'GET') {

@@ -57,10 +57,118 @@
       return `<a class="navlink${active}" href="${it.href}">${it.label}</a>`;
     }).join('');
   }
-  function buildSidebar(isAdmin) {
+  function buildSidebar(isAdmin, me) {
     let nav = `<div class="nav-sect">主要功能</div>${navItems(NAV_MAIN)}`;
     if (isAdmin) nav += `<div class="nav-sect">設定管理</div>${navItems(NAV_ADMIN)}`;
-    return `<aside class="app-sidebar" id="appSidebar"><div class="brand">開發處休假表</div><nav class="app-nav">${nav}</nav></aside>`;
+    const user = me ? `<button class="userblock" id="appUser" title="個人資料">
+        <span class="avatar">${esc((me.name || '?').slice(0, 1))}</span>
+        <span class="uinfo"><b>${esc(me.name || '')}</b>${me.english_name ? `<small>${esc(me.english_name)}</small>` : ''}</span>
+        <span class="chev">›</span>
+      </button>` : '';
+    return `<aside class="app-sidebar" id="appSidebar"><div class="brand">開發處休假表</div>${user}<nav class="app-nav">${nav}</nav></aside>`;
+  }
+
+  /* ── 個人資料抽屜 ─────────────────────────────────── */
+  const STATUS_LABEL = { active: '在職', parental_leave: '育嬰假', inactive: '離職', hidden: '隱藏' };
+  function ids(s) { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; } }
+  const dayOf = (period) => (period === 'morning' || period === 'afternoon') ? 0.5 : 1;
+
+  async function openProfile() {
+    if (document.getElementById('pp')) return;
+    document.body.insertAdjacentHTML('beforeend',
+      `<div class="pp-scrim" id="ppScrim"></div>
+       <aside class="pp" id="pp"><button class="pp-close" id="ppClose" aria-label="關閉">✕</button>
+         <h2>個人資料</h2><div id="ppBody"><div class="status">載入中…</div></div></aside>`);
+    const close = () => { const p = document.getElementById('pp'); if (p) p.remove(); const s = document.getElementById('ppScrim'); if (s) s.remove(); };
+    document.getElementById('ppScrim').onclick = close;
+    document.getElementById('ppClose').onclick = close;
+    try {
+      const now = new Date(); const year = now.getFullYear(); const month = now.getMonth() + 1;
+      const [me, depts, emps, types, leaves] = await Promise.all([
+        api('/api/me').then((r) => r.json()),
+        fetch(API_BASE + '/api/departments', { cache: 'no-store' }).then((r) => r.json()),
+        fetch(API_BASE + '/api/employees', { cache: 'no-store' }).then((r) => r.json()),
+        fetch(API_BASE + '/api/leave-types', { cache: 'no-store' }).then((r) => r.json()),
+        api(`/api/my-leaves?year=${year}`).then((r) => (r.ok ? r.json() : [])),
+      ]);
+      renderProfile({ me, depts, emps, types, leaves, year, month });
+    } catch (e) {
+      const b = document.getElementById('ppBody'); if (b) b.innerHTML = `<div class="status err">載入失敗：${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderProfile(ctx, editDeputy = false) {
+    const { me, depts, emps, types, leaves, year, month } = ctx;
+    const body = document.getElementById('ppBody'); if (!body) return;
+    const typeById = Object.fromEntries(types.map((t) => [t.id, t]));
+    const empName = (id) => { const e = emps.find((x) => x.id === id); return e ? e.name : ''; };
+    const deptNames = (me.department_ids || []).map((id) => (depts.find((d) => d.id === id) || {}).name).filter(Boolean).join('、') || '—';
+
+    // 請假統計（每筆：整天=1、半天=0.5），分本月與全年
+    const mp = `${year}-${String(month).padStart(2, '0')}`;
+    const stat = (list) => {
+      const by = {}; let sum = 0;
+      for (const r of list) { const d = dayOf(r.period); by[r.leave_type_id] = (by[r.leave_type_id] || 0) + d; sum += d; }
+      return { by, sum };
+    };
+    const yearStat = stat(leaves);
+    const monthStat = stat(leaves.filter((r) => (r.date || '').startsWith(mp)));
+    const rows = (st) => Object.entries(st.by).sort((a, b) => b[1] - a[1]).map(([tid, d]) => {
+      const t = typeById[tid] || {};
+      return `<div class="li"><span class="dot" style="background:${esc(t.color || '#64748b')}"></span>${esc(t.name || '未分類')}<span class="v">${d} 天</span></div>`;
+    }).join('');
+
+    // 職代卡：檢視或編輯（候選＝與本人有共同部門的在職同仁）
+    const myDeptSet = new Set(me.department_ids || []);
+    const cands = emps.filter((e) => e.id !== me.id && ids(e.department_ids).some((d) => myDeptSet.has(d)));
+    const opts = (cur, exclude) => '<option value="">無</option>' + cands.filter((e) => e.id !== exclude)
+      .map((e) => `<option value="${esc(e.id)}"${e.id === cur ? ' selected' : ''}>${esc(e.name)}</option>`).join('');
+    const depCard = editDeputy
+      ? `<div class="pp-card" style="grid-column:1/-1;"><div class="k">職務代理人</div>
+           <div class="row" style="margin-top:6px;gap:8px;">
+             <select id="ppDep1" style="flex:1;">${opts(me.deputy_1, me.deputy_2)}</select>
+             <select id="ppDep2" style="flex:1;">${opts(me.deputy_2, me.deputy_1)}</select>
+           </div>
+           <div class="row" style="margin-top:8px;justify-content:flex-end;">
+             <button class="btn sm" id="ppDepCancel">取消</button>
+             <button class="btn sm primary" id="ppDepSave">儲存</button>
+           </div></div>`
+      : `<div class="pp-card"><div class="k">職務代理人 <a href="#" id="ppDepEdit" style="float:right;color:var(--blue);text-decoration:none;">編輯</a></div>
+           ${esc([me.deputy_1, me.deputy_2].filter(Boolean).map(empName).filter(Boolean).join('、') || '—')}</div>`;
+
+    body.innerHTML = `
+      <div class="pp-head">
+        <span class="avatar lg">${esc((me.name || '?').slice(0, 1))}</span>
+        <div><b style="font-size:16px;">${esc(me.name || '')}</b>
+          ${me.english_name ? `<div class="muted">${esc(me.english_name)}</div>` : ''}</div>
+      </div>
+      <div class="pp-cards">
+        <div class="pp-card"><div class="k">部門</div>${esc(deptNames)}</div>
+        ${depCard}
+        <div class="pp-card"><div class="k">狀態</div>${esc(STATUS_LABEL[me.status] || me.status || '—')}</div>
+        <div class="pp-card"><div class="k">角色</div>${me.role === 'admin' ? '管理員' : '一般'}</div>
+      </div>
+      <h3 class="pp-sect">${month} 月請假小計</h3>
+      ${rows(monthStat) || '<div class="muted" style="padding:4px 2px;">本月尚無請假</div>'}
+      ${monthStat.sum ? `<div class="pp-total"><span>小計</span><span>${monthStat.sum} 天</span></div>` : ''}
+      <h3 class="pp-sect">${year} 年度累計</h3>
+      ${rows(yearStat) || '<div class="muted" style="padding:4px 2px;">今年尚無請假</div>'}
+      ${yearStat.sum ? `<div class="pp-total"><span>年度合計</span><span>${yearStat.sum} 天</span></div>` : ''}`;
+
+    const editBtn = document.getElementById('ppDepEdit');
+    if (editBtn) editBtn.onclick = (e) => { e.preventDefault(); renderProfile(ctx, true); };
+    const cancelBtn = document.getElementById('ppDepCancel');
+    if (cancelBtn) cancelBtn.onclick = () => renderProfile(ctx, false);
+    const saveBtn = document.getElementById('ppDepSave');
+    if (saveBtn) saveBtn.onclick = async () => {
+      const d1 = document.getElementById('ppDep1').value || null;
+      const d2 = document.getElementById('ppDep2').value || null;
+      if (d1 && d1 === d2) { alert('兩位職代不可相同'); return; }
+      const r = await api('/api/my-profile', { method: 'PUT', body: JSON.stringify({ deputy_1: d1, deputy_2: d2 }) });
+      if (!r.ok) { alert('儲存失敗'); return; }
+      ctx.me.deputy_1 = d1; ctx.me.deputy_2 = d2;
+      renderProfile(ctx, false);
+    };
   }
 
   async function fetchMe() {
@@ -115,7 +223,7 @@
     document.body.classList.toggle('is-admin', isAdmin);
 
     document.body.insertAdjacentHTML('afterbegin',
-      buildSidebar(isAdmin) +
+      buildSidebar(isAdmin, me) +
       `<div class="app-scrim" id="appScrim"></div>` +
       `<header class="app-topbar"><button class="ham" id="appHam" aria-label="選單">☰</button><b>開發處休假表</b></header>`,
     );
@@ -125,6 +233,8 @@
     document.getElementById('appHam').onclick = () => { sb.classList.add('open'); scrim.classList.add('show'); };
     scrim.onclick = close;
     sb.querySelectorAll('a').forEach((a) => a.addEventListener('click', close));
+    const ub = document.getElementById('appUser');
+    if (ub) ub.onclick = () => { close(); openProfile(); };
 
     // 非管理員：移除管理專屬元素、擋掉管理頁
     if (!isAdmin) {
