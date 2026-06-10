@@ -98,6 +98,14 @@ export default {
         return json(r.results.map((h) => h.date));
       }
 
+      // 請假前警示檢查：職代當天也請假 / 部門當天請假達 1/3 上限
+      if (pathname === '/api/leave-check' && method === 'GET') {
+        const empId = url.searchParams.get('employee_id');
+        const dates = (url.searchParams.get('dates') || '').split(',').filter(Boolean);
+        if (!empId || !dates.length) return json({ error: 'missing_fields' }, 400);
+        return json(await buildLeaveCheck(env, empId, dates));
+      }
+
       if (pathname === '/api/leave-types' && method === 'GET') {
         const r = await env.DB.prepare('SELECT * FROM leave_types ORDER BY sort_order').all();
         return json(r.results);
@@ -574,9 +582,9 @@ async function syncFromBase44(env) {
   emps.forEach((e, i) => {
     stmts.push(
       env.DB.prepare(
-        'INSERT INTO employees (id,name,english_name,department_ids,status,sort_order) VALUES (?,?,?,?,?,?) ' +
-          'ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status=excluded.status, sort_order=excluded.sort_order',
-      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), e.status || 'active', (i + 1) * 10),
+        'INSERT INTO employees (id,name,english_name,department_ids,status,sort_order,deputy_1,deputy_2) VALUES (?,?,?,?,?,?,?,?) ' +
+          'ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status=excluded.status, sort_order=excluded.sort_order, deputy_1=excluded.deputy_1, deputy_2=excluded.deputy_2',
+      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), e.status || 'active', (i + 1) * 10, e.deputy_1 || null, e.deputy_2 || null),
     );
   });
 
@@ -603,6 +611,32 @@ async function syncFromBase44(env) {
 // 一筆休假折算成「天數」：整天=1、半天(上/下午)=0.5。
 function leaveDays(period) {
   return period === 'morning' || period === 'afternoon' ? 0.5 : 1;
+}
+
+// 警示檢查：對某員工在多個日期,算出「職代當天也請假」與「部門當天請假達 1/3」。
+async function buildLeaveCheck(env, empId, dates) {
+  const emp = await env.DB.prepare('SELECT id, department_ids, deputy_1, deputy_2 FROM employees WHERE id = ?').bind(empId).first();
+  if (!emp) return { results: {} };
+  const deptId = safeIds(emp.department_ids)[0] || null;
+  const all = await env.DB.prepare("SELECT id, name, department_ids FROM employees WHERE status = 'active'").all();
+  const nameById = Object.fromEntries(all.results.map((e) => [e.id, e.name]));
+  const deptMemberIds = new Set(all.results.filter((e) => deptId && safeIds(e.department_ids).includes(deptId)).map((e) => e.id));
+  const threshold = Math.floor(deptMemberIds.size / 3);
+  const deputies = [emp.deputy_1, emp.deputy_2].filter(Boolean);
+
+  const ph = dates.map(() => '?').join(',');
+  const recs = await env.DB.prepare(`SELECT DISTINCT employee_id, date FROM leave_records WHERE date IN (${ph})`).bind(...dates).all();
+  const byDate = {};
+  for (const r of recs.results) (byDate[r.date] ||= new Set()).add(r.employee_id);
+
+  const results = {};
+  for (const d of dates) {
+    const onLeave = byDate[d] || new Set();
+    const dep = deputies.filter((id) => id !== empId && onLeave.has(id)).map((id) => nameById[id] || '職代');
+    const deptCount = [...onLeave].filter((id) => id !== empId && deptMemberIds.has(id)).length;
+    results[d] = { deputies: dep, dept_count: deptCount, over: threshold > 0 && deptCount >= threshold };
+  }
+  return { threshold, dept_size: deptMemberIds.size, results };
 }
 
 async function buildDashboard(env, date, deptId) {

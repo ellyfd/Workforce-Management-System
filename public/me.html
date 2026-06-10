@@ -306,7 +306,26 @@ async function deleteIds(ids){
   } catch (e) { alert('刪除失敗：' + e.message); }
 }
 
+// 送出前警示：職代當天也請假 / 部門當天達 1/3。出差不檢查。回傳警示字串陣列。
+async function warnFor(dates, typeId){
+  if (isBizType(typeId) || !dates.length) return [];
+  try {
+    const r = await fetch(`${API_BASE}/api/leave-check?employee_id=${encodeURIComponent(me.id)}&dates=${dates.join(',')}`, { cache:'no-store' });
+    if (!r.ok) return [];
+    const data = await r.json();
+    const msgs = [];
+    for (const d of dates){
+      const w = data.results[d]; if (!w) continue;
+      if (w.deputies && w.deputies.length) msgs.push(`${d}：職代 ${w.deputies.join('、')} 當天也請假`);
+      if (w.over) msgs.push(`${d}：部門當天請假已達 1/3（已 ${w.dept_count} 人）`);
+    }
+    return msgs;
+  } catch (_) { return []; }
+}
+
 async function addLeave(date, typeId){
+  const w = await warnFor([date], typeId);
+  if (w.length && !confirm('⚠️ 注意：\n' + w.join('\n') + '\n\n仍要請假嗎？')) return;
   try {
     await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id: typeId, period: periodOfType(typeId) }) });
     await loadMyLeaves(); showCalendar();
@@ -330,6 +349,8 @@ async function fillRange(startDate, endDate, typeId){
     items.push({ date, leave_type_id: typeId, period });
   }
   if (!items.length) { alert('此區間內沒有可請假的日子（週末/假日已略過）。'); return; }
+  const w = await warnFor(items.map(i => i.date), typeId);
+  if (w.length && !confirm('⚠️ 注意：\n' + w.join('\n') + '\n\n仍要送出區間請假嗎？')) return;
   try {
     const r = await api('/api/my-leaves/bulk', { method:'POST', body: JSON.stringify({ items }) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
