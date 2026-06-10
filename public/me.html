@@ -23,6 +23,7 @@
   .cal .wd.we{ color:#ef4444; }
   .day{ aspect-ratio:1/1; border:1px solid var(--border); border-radius:8px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; background:#fff; position:relative; }
   .day.we{ background:var(--weekend); }
+  .day.picking{ outline:2px solid var(--blue); outline-offset:-2px; }
   .day.empty{ visibility:hidden; }
   .day .d{ font-size:12px; color:#374151; align-self:flex-start; }
   .day .chip{ margin-top:auto; margin-bottom:auto; width:100%; border-radius:6px; color:#fff; font-size:12px; font-weight:600; text-align:center; padding:3px 0; }
@@ -62,7 +63,10 @@ if (!DEVICE) { DEVICE = crypto.randomUUID(); localStorage.setItem('dev_device_to
 let me = null;
 let leaveTypes = [];
 let cur = new Date(); // 目前顯示的月份
-let myLeaves = {};    // { 'YYYY-MM-DD': {id, leave_type_id} }
+let myLeaves = {};    // { 'YYYY-MM-DD': {id, leave_type_id, period} }
+let selType = '';     // 目前選的假別 id（''＝尚未選）
+let rangeMode = false; // 區間請假模式
+let rangeStart = null; // 區間起點 date
 
 const app = document.getElementById('app');
 const api = (path, opts = {}) => fetch(API_BASE + path, {
@@ -77,16 +81,40 @@ function labelOf(typeId){ const t = leaveTypes.find(x=>x.id===typeId); return t 
 
 async function init(){
   try {
+    // 個人連結：me.html?key=英文名 → 自動綁定並帶出本人
+    const key = (new URLSearchParams(location.search).get('key') || '').trim();
     const res = await api('/api/me');
-    if (res.status === 401) return showLogin();
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    me = await res.json();
+    if (res.ok) {
+      me = await res.json();
+      const k = key.toLowerCase();
+      const matched = k && ((me.english_name||'').toLowerCase()===k || (me.name||'')===key);
+      if (key && !matched) { if (await bindByKey(key)) return; } // 換成 key 指定的人
+    } else if (res.status === 401) {
+      if (key) { if (await bindByKey(key)) return; }
+      return showLogin();
+    } else {
+      throw new Error('HTTP ' + res.status);
+    }
     leaveTypes = await (await api('/api/leave-types')).json();
     await loadMyLeaves();
     showCalendar();
   } catch (e) {
     app.innerHTML = `<div class="status err">連線失敗：${e.message}<br>請確認 API_BASE 設定正確（目前：${API_BASE}）</div>`;
   }
+}
+
+// 用英文名（或中文名）找員工並綁定本裝置；成功會重新 init 並回 true。
+async function bindByKey(key){
+  const k = key.toLowerCase();
+  const emps = await (await api('/api/employees')).json();
+  const emp = emps.find(e => (e.english_name||'').toLowerCase()===k)
+    || emps.find(e => (e.name||'')===key)
+    || emps.find(e => (e.english_name||'').toLowerCase().includes(k));
+  if (!emp) return false; // 找不到 → 交回呼叫端處理（顯示清單）
+  const r = await api('/api/bind', { method:'POST', body: JSON.stringify({ employee_id: emp.id }) });
+  if (!r.ok) return false;
+  await init();
+  return true;
 }
 
 async function showLogin(){
@@ -141,7 +169,7 @@ function showCalendar(){
   const first = new Date(y, m-1, 1).getDay();
   const days = new Date(y, m, 0).getDate();
 
-  const opts = leaveTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  const opts = leaveTypes.map(t => `<option value="${t.id}"${t.id===selType?' selected':''}>${t.name}</option>`).join('');
 
   // 本月假別小計（天數，半天計 0.5）
   const monthPrefix = `${y}-${String(m).padStart(2,'0')}`;
@@ -165,7 +193,8 @@ function showCalendar(){
     const lv = myLeaves[date];
     const half = lv && (lv.period==='morning'||lv.period==='afternoon') ? (lv.period==='morning'?' am':' pm') : '';
     const chip = lv ? `<div class="chip${half}" style="background:${colorOf(lv.leave_type_id)}">${labelOf(lv.leave_type_id)}</div>` : '';
-    cells += `<div class="day${we?' we':''}${half?' half':''}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
+    const picking = (rangeStart===date) ? ' picking' : '';
+    cells += `<div class="day${we?' we':''}${half?' half':''}${picking}" data-date="${date}"><div class="d">${d}</div>${chip}</div>`;
   }
 
   app.innerHTML = `
@@ -180,19 +209,24 @@ function showCalendar(){
         <button id="next">下個月 ›</button>
       </div>
       ${summary ? `<div class="summary">${summary}</div>` : '<div class="muted" style="font-size:12px;">本月尚無休假</div>'}
-      <div class="row" style="margin:10px 0;"><span class="muted">假別：</span><div style="flex:1;min-width:160px;"><select id="ltype">${opts}</select></div></div>
+      <div class="row" style="margin:10px 0; gap:8px;">
+        <select id="ltype" style="flex:1; min-width:140px;"><option value="">選擇假別…</option>${opts}</select>
+        <button id="rangeBtn" class="${rangeMode?'primary':''}" title="區間請假">🗓️ 區間</button>
+      </div>
+      ${rangeMode ? `<div class="muted" style="font-size:12px; color:var(--blue);">區間模式：${rangeStart?`已選起點 ${rangeStart}，再點結束日`:'點第一天當起點'}</div>` : ''}
       <div class="cal">
         ${WEEKDAY.map((w,i)=>`<div class="wd${i===0||i===6?' we':''}">${w}</div>`).join('')}
         ${cells}
       </div>
-      <div class="muted" style="margin-top:10px;">點日期＝用上方假別請假；再點一次＝取消。午休/早休會自動算半天。</div>
+      <div class="muted" style="margin-top:10px;">填入：選假別後點日期。取消：雙擊已填入的格子。區間：按「區間」後點起訖兩天。</div>
     </div>
     <div class="card" style="margin-top:12px;">
       <details>
         <summary style="cursor:pointer;font-weight:600;">操作說明與假別圖例</summary>
         <ul class="muted" style="margin:10px 0;padding-left:18px;line-height:1.7;font-size:13px;">
-          <li><b>填入請假</b>：先從上方選擇假別，再點日曆中的日期即可填入。</li>
-          <li><b>取消請假</b>：再點一次已填入的格子即可取消。</li>
+          <li><b>填入請假</b>：先從上方「選擇假別」，再點日曆中的日期即可填入。</li>
+          <li><b>取消請假</b>：<b>雙擊</b>已填入的格子，確認後即取消。</li>
+          <li><b>區間請假</b>：選好假別後點「🗓️ 區間」進入區間模式，依序點起始日與結束日。</li>
           <li><b>半天假</b>：選「下午休 / 上午休」會以半格顯示、自動計 0.5 天。</li>
         </ul>
         <div style="font-weight:600;margin:6px 0;">假別圖例</div>
@@ -201,27 +235,62 @@ function showCalendar(){
     </div>`;
 
   document.getElementById('logout').onclick = () => { localStorage.removeItem('dev_device_token'); location.reload(); };
-  document.getElementById('prev').onclick = async () => { cur = new Date(y, m-2, 1); await loadMyLeaves(); showCalendar(); };
-  document.getElementById('next').onclick = async () => { cur = new Date(y, m, 1); await loadMyLeaves(); showCalendar(); };
+  document.getElementById('prev').onclick = async () => { cur = new Date(y, m-2, 1); rangeStart=null; await loadMyLeaves(); showCalendar(); };
+  document.getElementById('next').onclick = async () => { cur = new Date(y, m, 1); rangeStart=null; await loadMyLeaves(); showCalendar(); };
+  document.getElementById('ltype').onchange = (ev) => { selType = ev.target.value; };
+  document.getElementById('rangeBtn').onclick = () => { rangeMode = !rangeMode; rangeStart = null; showCalendar(); };
   app.querySelectorAll('.day[data-date]').forEach(el => {
-    el.onclick = () => toggleDay(el.dataset.date);
+    el.onclick = () => onCell(el.dataset.date);
+    el.ondblclick = () => onCellDbl(el.dataset.date);
   });
 }
 
-async function toggleDay(date){
+// 單擊：區間模式選起訖；否則空白格填入（已填入的格子單擊不動作，雙擊才取消）
+function onCell(date){
   const lv = myLeaves[date];
-  try {
-    if (lv) {
-      await api(`/api/my-leaves/${lv.id}`, { method:'DELETE' });
-    } else {
-      const leave_type_id = document.getElementById('ltype').value;
-      await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id, period: periodOfType(leave_type_id) }) });
-    }
-    await loadMyLeaves();
-    showCalendar();
-  } catch (e) {
-    alert('操作失敗：' + e.message);
+  if (rangeMode){
+    if (!selType){ alert('請先選擇假別'); return; }
+    if (!rangeStart){ rangeStart = date; showCalendar(); return; }
+    const a = rangeStart < date ? rangeStart : date;
+    const b = rangeStart < date ? date : rangeStart;
+    rangeStart = null;
+    fillRange(a, b, selType);
+    return;
   }
+  if (!lv){
+    if (!selType){ alert('請先從上方「選擇假別」'); return; }
+    addLeave(date, selType);
+  }
+}
+
+// 雙擊已填入的格子＝取消
+function onCellDbl(date){
+  const lv = myLeaves[date];
+  if (lv && confirm('取消這天的請假？')) cancelLeave(lv.id);
+}
+
+async function addLeave(date, typeId){
+  try {
+    await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id: typeId, period: periodOfType(typeId) }) });
+    await loadMyLeaves(); showCalendar();
+  } catch (e) { alert('操作失敗：' + e.message); }
+}
+async function cancelLeave(id){
+  try {
+    await api(`/api/my-leaves/${id}`, { method:'DELETE' });
+    await loadMyLeaves(); showCalendar();
+  } catch (e) { alert('操作失敗：' + e.message); }
+}
+async function fillRange(startDate, endDate, typeId){
+  const period = periodOfType(typeId);
+  const reqs = [];
+  const d = new Date(startDate + 'T00:00:00'), end = new Date(endDate + 'T00:00:00');
+  for (; d <= end; d.setDate(d.getDate()+1)){
+    const date = ymd(d.getFullYear(), d.getMonth()+1, d.getDate());
+    reqs.push(api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id: typeId, period }) }));
+  }
+  try { await Promise.all(reqs); } catch (e) { alert('區間請假失敗：' + e.message); }
+  await loadMyLeaves(); showCalendar();
 }
 
 init();

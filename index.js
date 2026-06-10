@@ -405,8 +405,9 @@ function safeIds(s) {
 }
 
 // ── DPC 同步：Base44 為真相來源，單向灌進 D1 ──────────────────────────
-// 只動 DPC 部門的 department/employees/leave_records；leave_types 與 holidays
-// 屬全域參考資料一併更新；保留每位員工的 device_token（me.html 綁定用）。
+// 只動 DPC 部門的 department/employees/leave_records。
+// 假別(leave_types)與假日(holidays)「不同步」，改由休假設定頁手動維護。
+// 保留每位員工的 device_token（me.html 綁定用）。
 const D1_DPC_DEPT = 'd_dpc';
 
 async function base44(env, entity, q) {
@@ -457,11 +458,11 @@ async function syncFromBase44(env) {
   const start = `${year}-01-01`;
   const end = `${year + 1}-12-31`;
 
-  const [departments, employeesAll, leaveTypes, holidays, records] = await Promise.all([
+  // 仍抓 LeaveType 只為了推算半天時段；不寫回 D1。假日完全不抓。
+  const [departments, employeesAll, leaveTypes, records] = await Promise.all([
     base44(env, 'Department'),
     base44(env, 'Employee'),
     base44(env, 'LeaveType'),
-    base44(env, 'Holiday'),
     base44(env, 'LeaveRecord', { date: { $gte: start, $lte: end } }),
   ]);
 
@@ -489,33 +490,14 @@ async function syncFromBase44(env) {
     ).bind(D1_DPC_DEPT, displayName, dpcDept.sort_order ?? 10, 'active'),
   );
 
-  // 2) 假別（全域，整批替換）
-  stmts.push(env.DB.prepare('DELETE FROM leave_types'));
-  leaveTypes.forEach((t, i) => {
-    stmts.push(
-      env.DB.prepare('INSERT INTO leave_types (id,name,short_name,color,sort_order) VALUES (?,?,?,?,?)')
-        .bind(t.id, t.name, (t.short_name || t.name || '').trim(), t.color || '#64748b', t.sort_order ?? (i + 1) * 10),
-    );
-  });
+  // 假別與假日「不同步」：略過，保留休假設定頁手動維護的內容。
 
-  // 3) 假日（全域，整批替換、去重）
-  stmts.push(env.DB.prepare('DELETE FROM holidays'));
-  const seenH = new Set();
-  holidays.forEach((h, i) => {
-    if (!h.date || seenH.has(h.date)) return;
-    seenH.add(h.date);
-    stmts.push(
-      env.DB.prepare('INSERT INTO holidays (id,date,name,type) VALUES (?,?,?,?)')
-        .bind(h.id || `h_${i}`, h.date, h.name || null, h.type || 'national'),
-    );
-  });
-
-  // 4) 先清掉現有 DPC 員工的休假紀錄（待會重灌）
+  // 2) 先清掉現有 DPC 員工的休假紀錄（待會重灌）
   stmts.push(
     env.DB.prepare("DELETE FROM leave_records WHERE employee_id IN (SELECT id FROM employees WHERE instr(department_ids, ?) > 0)").bind(D1_DPC_DEPT),
   );
 
-  // 5) 刪掉已不在 Base44 DPC 名單裡的舊 DPC 員工（保留仍在的人 → device_token 不動）
+  // 3) 刪掉已不在 Base44 DPC 名單裡的舊 DPC 員工（保留仍在的人 → device_token 不動）
   if (emps.length) {
     const ph = emps.map(() => '?').join(',');
     stmts.push(
@@ -524,17 +506,17 @@ async function syncFromBase44(env) {
     );
   }
 
-  // 6) Upsert DPC 員工（用 Base44 id 當 D1 id；UPDATE 不碰 device_token）
+  // 4) Upsert DPC 員工（用 Base44 id 當 D1 id；保留真實 status；UPDATE 不碰 device_token）
   emps.forEach((e, i) => {
     stmts.push(
       env.DB.prepare(
         'INSERT INTO employees (id,name,english_name,department_ids,status,sort_order) VALUES (?,?,?,?,?,?) ' +
-          "ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status='active', sort_order=excluded.sort_order",
-      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), 'active', (i + 1) * 10),
+          'ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status=excluded.status, sort_order=excluded.sort_order',
+      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), e.status || 'active', (i + 1) * 10),
     );
   });
 
-  // 7) 重灌 DPC 休假紀錄
+  // 5) 重灌 DPC 休假紀錄
   for (const r of dpcRecords) {
     const lt = ltById[r.leave_type_id];
     const period = r.period || periodFromShort(lt ? lt.short_name : '');
@@ -551,8 +533,6 @@ async function syncFromBase44(env) {
     department: displayName,
     employees: emps.length,
     leave_records: dpcRecords.length,
-    leave_types: leaveTypes.length,
-    holidays: seenH.size,
   };
 }
 
