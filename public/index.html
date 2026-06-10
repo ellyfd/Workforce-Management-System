@@ -101,13 +101,24 @@
     padding: 5px 10px; height: 28px; border-right: none;
   }
 
-  /* 假別色塊：整天填滿；半天只佔一半（早休＝上半、午休＝下半），製造不同底色效果 */
+  /* 假別色塊：整天填滿；半天只佔一半（早休＝上半、午休＝下半），格內字較小以塞進半格 */
   .chip {
     display: flex; align-items: center; justify-content: center;
-    height: 100%; border-radius: 6px; font-size:14px; font-weight: 600; color: #fff;
+    height: 100%; border-radius: 6px; font-size:12px; font-weight: 600; color: #fff;
   }
   td.day.half { display: flex; flex-direction: column; gap: 1px; }
-  td.day.half .chip { height: calc(50% - 1px); font-size:14px; }
+  td.day.half .chip { height: calc(50% - 1px); font-size:11px; line-height:1; }
+  td.day.half .chip.am { margin-bottom: auto; }
+  td.day.half .chip.pm { margin-top: auto; }
+
+  /* 年度累計休假日（同 Excel：休=1、午休/早休=0.5） */
+  thead th.tot, tbody td.tot {
+    position: sticky; left: var(--name-w); z-index: 10;
+    min-width: 52px; width: 52px; text-align: center;
+    background: #fff; font-variant-numeric: tabular-nums;
+  }
+  thead th.tot { z-index: 30; background: var(--bg); }
+  tbody td.tot { font-weight: 600; box-shadow: 2px 0 3px rgba(0,0,0,.04); }
 
   .status { padding: 24px; color: var(--muted); font-size: 14px; }
   .err { color: #b91c1c; }
@@ -248,11 +259,14 @@ function resolveCell(lv, legend){
 // 整天 / 只有單一半天 → 整格滿版(看得清楚);同一天上午+下午都有 → 上下各半。
 function cellHTML(slots, cls, empAttr, date){
   if (slots && (slots.full || slots.am || slots.pm)){
-    if (slots.am && slots.pm){
-      return `<td class="${cls} half"${empAttr} data-date="${date}"><div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div><div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div></td>`;
+    if (slots.full){
+      return `<td class="${cls}"${empAttr} data-date="${date}"><div class="chip" style="background:${slots.full.color}">${slots.full.label}</div></td>`;
     }
-    const c = slots.full || slots.am || slots.pm;
-    return `<td class="${cls}"${empAttr} data-date="${date}"><div class="chip" style="background:${c.color}">${c.label}</div></td>`;
+    // 半天：早休/上午休＝上半格、午休/下午休＝下半格；兩者可並存
+    let inner = '';
+    if (slots.am) inner += `<div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div>`;
+    if (slots.pm) inner += `<div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div>`;
+    return `<td class="${cls} half"${empAttr} data-date="${date}">${inner}</td>`;
   }
   return `<td class="${cls}"${empAttr} data-date="${date}"></td>`;
 }
@@ -285,7 +299,7 @@ function render(data){
 
   // 表頭
   const table = document.getElementById('table');
-  let html = '<thead><tr><th class="name">姓名</th>';
+  let html = '<thead><tr><th class="name">姓名</th><th class="tot" title="年度累計休假日（休=1 天、午休/早休=0.5 天）">累計</th>';
   days.forEach(day=>{
     const isHol = holidays.has(day.date);
     const cls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
@@ -309,7 +323,8 @@ function render(data){
   // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
   HOLIDAYS = holidays;
   EMP = {}; EMP_DEPT = {}; DEPT_MEMBERS = {};
-  const colCount = days.length + 1;
+  const colCount = days.length + 2; // 姓名 + 累計
+  const yearTotals = data.year_totals || {};
   const depts = DEPTSEL.size ? allDepts.filter(d=>DEPTSEL.has(d.name)) : allDepts;
   let anyMember = false;
   depts.forEach((dept, di)=>{
@@ -320,7 +335,8 @@ function render(data){
       if (m.id){ EMP[m.id] = { name: m.name, leaves: m.leaves || {} }; EMP_DEPT[m.id] = di; DEPT_MEMBERS[di].push(m.id); }
       const empAttr = m.id ? ` data-emp="${m.id}"` : '';
       const rowAttr = m.id ? ` class="emprow" draggable="true" data-emp="${m.id}" data-dept="${di}"` : '';
-      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⋮⋮</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td>`;
+      const tot = m.id != null ? (yearTotals[m.id] || 0) : 0;
+      html += `<tr${rowAttr}><td class="name"><div class="n">${m.id?'<span class="grip">⋮⋮</span> ':''}${m.name||''}</div>${m.code?`<div class="c">${m.code}</div>`:''}</td><td class="tot">${tot||''}</td>`;
       days.forEach(day=>{
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
