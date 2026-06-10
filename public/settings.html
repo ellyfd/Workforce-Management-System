@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>設定管理 · DPC 同步</title>
+<style>
+  :root{ --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; --blue:#2563eb; --green:#16a34a; --red:#dc2626; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif; color:#1f2937; background:var(--bg); }
+  .page{ max-width:640px; margin:0 auto; padding:14px; }
+  .top{ display:flex; align-items:baseline; gap:12px; }
+  h1{ font-size:20px; margin:0; }
+  .spacer{ flex:1; }
+  a.nav-link{ font-size:13px; color:var(--blue); text-decoration:none; }
+  a.nav-link:hover{ text-decoration:underline; }
+  .muted{ color:var(--muted); font-size:13px; }
+  .card{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; margin-top:12px; }
+  .card h2{ font-size:15px; margin:0 0 4px; }
+  .field{ display:flex; flex-direction:column; gap:4px; margin-top:12px; }
+  .field label{ font-size:12px; color:var(--muted); }
+  input[type=password]{ font:inherit; padding:9px 11px; border:1px solid var(--border); border-radius:8px; }
+  button{ font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--border); background:#fff; padding:9px 16px; }
+  button.primary{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  button:disabled{ opacity:.5; cursor:default; }
+  .row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  .status-line{ font-size:13px; }
+  .ok{ color:var(--green); } .err{ color:var(--red); }
+  .kv{ display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13px; margin-top:8px; }
+  .kv .k{ color:var(--muted); }
+  pre{ background:#f3f4f6; border-radius:8px; padding:10px; font-size:12px; overflow:auto; }
+  footer{ color:var(--muted); font-size:11px; margin-top:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <h1>設定管理</h1>
+    <span class="spacer"></span>
+    <a class="nav-link" href="index.html">全部排休</a>
+    <a class="nav-link" href="manage.html">休假管理</a>
+  </div>
+  <div class="muted">DPC 資料以 Base44 為真相來源,定時(每 30 分鐘)自動同步進系統;也可在此手動立即同步。</div>
+
+  <div class="card">
+    <h2>DPC 同步</h2>
+    <div id="statusBox" class="muted" style="margin-top:8px;">讀取同步狀態中…</div>
+
+    <div class="field">
+      <label>同步密語(SYNC_SECRET,會記在本機瀏覽器)</label>
+      <input id="secret" type="password" placeholder="輸入密語…" />
+    </div>
+    <div class="row">
+      <button class="primary" id="syncBtn">立即同步</button>
+      <span id="result" class="status-line"></span>
+    </div>
+    <div class="muted" style="margin-top:10px;">方向為單向:Base44 → 系統。DPC 同仁在「我的排休」改的假,下次同步會以 Base44 為準覆蓋。</div>
+  </div>
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const API_BASE = (new URLSearchParams(location.search).get('api')
+  || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
+let secret = localStorage.getItem('dev_sync_secret') || '';
+const $ = (id) => document.getElementById(id);
+$('secret').value = secret;
+
+function fmtTime(ts){ return ts ? new Date(Number(ts)).toLocaleString('zh-TW') : '—'; }
+
+async function loadStatus(){
+  try {
+    const r = await fetch(`${API_BASE}/api/sync/status`, { cache:'no-store' });
+    const s = await r.json();
+    const box = $('statusBox');
+    if (s.never){
+      box.innerHTML = '<span class="muted">尚未同步過。</span>';
+      return;
+    }
+    const okTxt = s.ok ? '<span class="ok">成功</span>' : `<span class="err">失敗</span>`;
+    box.innerHTML = `
+      <div class="kv">
+        <span class="k">上次同步</span><span>${fmtTime(s.updated_at)}　${okTxt}</span>
+        ${s.ok ? `<span class="k">部門</span><span>${s.department||'DPC'}</span>
+        <span class="k">員工 / 休假</span><span>${s.employees ?? '—'} 人 / ${s.leave_records ?? '—'} 筆</span>
+        <span class="k">假別 / 假日</span><span>${s.leave_types ?? '—'} 種 / ${s.holidays ?? '—'} 天</span>`
+        : `<span class="k">錯誤</span><span class="err">${s.error||''}</span>`}
+      </div>`;
+  } catch (e) {
+    $('statusBox').innerHTML = `<span class="err">讀取狀態失敗:${e.message}</span>`;
+  }
+}
+
+$('syncBtn').onclick = async () => {
+  secret = $('secret').value.trim();
+  localStorage.setItem('dev_sync_secret', secret);
+  const btn = $('syncBtn'), res = $('result');
+  btn.disabled = true; res.textContent = '同步中…'; res.className = 'status-line muted';
+  try {
+    const r = await fetch(`${API_BASE}/api/sync`, {
+      method: 'POST',
+      headers: secret ? { 'X-Sync-Secret': secret } : {},
+    });
+    const s = await r.json();
+    if (r.status === 401){ res.textContent = '密語錯誤'; res.className = 'status-line err'; }
+    else if (s.ok){ res.textContent = `完成:${s.employees} 人、${s.leave_records} 筆休假`; res.className = 'status-line ok'; }
+    else { res.textContent = `失敗:${s.error||'未知錯誤'}`; res.className = 'status-line err'; }
+  } catch (e) {
+    res.textContent = `失敗:${e.message}`; res.className = 'status-line err';
+  } finally {
+    btn.disabled = false;
+    loadStatus();
+  }
+};
+
+loadStatus();
+</script>
+</body>
+</html>

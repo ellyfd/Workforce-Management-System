@@ -20,7 +20,7 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token, X-Admin-Key',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token, X-Admin-Key, X-Sync-Secret',
 };
 
 const json = (obj, status = 200) =>
@@ -322,10 +322,32 @@ export default {
         return json(await buildStats(env, year));
       }
 
+      // ── DPC 同步（Base44 → D1，單向、只動 DPC）─────────────────────
+      if (pathname === '/api/sync' && method === 'POST') {
+        const secret = env.SYNC_SECRET;
+        if (secret && request.headers.get('X-Sync-Secret') !== secret) {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        const r = await runSync(env);
+        return json(r, r.ok ? 200 : 500);
+      }
+      if (pathname === '/api/sync/status' && method === 'GET') {
+        const row = await env.DB.prepare("SELECT v, updated_at FROM kv WHERE k = 'last_dpc_sync'").first();
+        if (!row) return json({ ok: null, never: true });
+        let v = {};
+        try { v = JSON.parse(row.v); } catch {}
+        return json({ ...v, updated_at: row.updated_at });
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       return json({ error: String(e && e.message ? e.message : e) }, 500);
     }
+  },
+
+  // Cron 定時觸發（見 wrangler.toml [triggers]）：定時把 Base44 的 DPC 灌進 D1。
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runSync(env));
   },
 };
 
@@ -380,6 +402,157 @@ function safeIds(s) {
   } catch {
     return [];
   }
+}
+
+// ── DPC 同步：Base44 為真相來源，單向灌進 D1 ──────────────────────────
+// 只動 DPC 部門的 department/employees/leave_records；leave_types 與 holidays
+// 屬全域參考資料一併更新；保留每位員工的 device_token（me.html 綁定用）。
+const D1_DPC_DEPT = 'd_dpc';
+
+async function base44(env, entity, q) {
+  const api = env.BASE44_API_URL || 'https://app-67c8f9d9.base44.app/api';
+  const url = new URL(`${api}/entities/${entity}`);
+  if (q) url.searchParams.set('q', JSON.stringify(q));
+  url.searchParams.set('limit', '10000');
+  const res = await fetch(url, {
+    headers: { api_key: env.BASE44_API_KEY, 'X-App-Id': env.BASE44_APP_ID || '693bb4665c3a400767c8f9d9' },
+  });
+  if (!res.ok) throw new Error(`Base44 ${entity} HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+// 由假別簡稱推半天時段（與前端一致）：含「早」=上午、含「午」=下午、否則整天。
+function periodFromShort(short) {
+  if (/早/.test(short || '')) return 'morning';
+  if (/午/.test(short || '')) return 'afternoon';
+  return 'full';
+}
+
+// 執行同步並把結果寫進 kv（last_dpc_sync），失敗也記錄，永不丟例外給呼叫端。
+async function runSync(env) {
+  try {
+    const summary = await syncFromBase44(env);
+    const v = JSON.stringify({ ok: true, ...summary });
+    await env.DB.prepare(
+      "INSERT INTO kv (k, v, updated_at) VALUES ('last_dpc_sync', ?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at",
+    ).bind(v, Date.now()).run();
+    return { ok: true, ...summary };
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : e);
+    const v = JSON.stringify({ ok: false, error: msg });
+    try {
+      await env.DB.prepare(
+        "INSERT INTO kv (k, v, updated_at) VALUES ('last_dpc_sync', ?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at",
+      ).bind(v, Date.now()).run();
+    } catch {}
+    return { ok: false, error: msg };
+  }
+}
+
+async function syncFromBase44(env) {
+  if (!env.BASE44_API_KEY) throw new Error('缺少 BASE44_API_KEY（請用 wrangler secret put 設定）');
+  const deptName = env.DPC_DEPT_NAME || 'DPC';
+  const displayName = env.DPC_DISPLAY_NAME || 'DPC';
+  const year = new Date().getFullYear();
+  const start = `${year}-01-01`;
+  const end = `${year + 1}-12-31`;
+
+  const [departments, employeesAll, leaveTypes, holidays, records] = await Promise.all([
+    base44(env, 'Department'),
+    base44(env, 'Employee'),
+    base44(env, 'LeaveType'),
+    base44(env, 'Holiday'),
+    base44(env, 'LeaveRecord', { date: { $gte: start, $lte: end } }),
+  ]);
+
+  if (!Array.isArray(employeesAll) || employeesAll.length === 0) {
+    throw new Error('Base44 回傳的員工清單為空，為安全起見中止同步');
+  }
+  const dpcDept = departments.find((d) => d.name === deptName);
+  if (!dpcDept) throw new Error(`在 Base44 找不到部門「${deptName}」`);
+
+  const emps = employeesAll
+    .filter((e) => (e.department_ids || []).includes(dpcDept.id) && !['inactive', 'parental_leave', 'hidden'].includes(e.status))
+    .sort((a, b) => (a.sort_order_by_dept?.[dpcDept.id] ?? 9e9) - (b.sort_order_by_dept?.[dpcDept.id] ?? 9e9));
+  const dpcEmpIds = new Set(emps.map((e) => e.id));
+  const ltById = Object.fromEntries(leaveTypes.map((t) => [t.id, t]));
+  const dpcRecords = records.filter((r) => dpcEmpIds.has(r.employee_id));
+
+  const stmts = [];
+
+  // 1) DPC 部門（upsert）
+  stmts.push(
+    env.DB.prepare(
+      'INSERT INTO departments (id,name,sort_order,status) VALUES (?,?,?,?) ' +
+        'ON CONFLICT(id) DO UPDATE SET name=excluded.name, sort_order=excluded.sort_order, status=excluded.status',
+    ).bind(D1_DPC_DEPT, displayName, dpcDept.sort_order ?? 10, 'active'),
+  );
+
+  // 2) 假別（全域，整批替換）
+  stmts.push(env.DB.prepare('DELETE FROM leave_types'));
+  leaveTypes.forEach((t, i) => {
+    stmts.push(
+      env.DB.prepare('INSERT INTO leave_types (id,name,short_name,color,sort_order) VALUES (?,?,?,?,?)')
+        .bind(t.id, t.name, (t.short_name || t.name || '').trim(), t.color || '#64748b', t.sort_order ?? (i + 1) * 10),
+    );
+  });
+
+  // 3) 假日（全域，整批替換、去重）
+  stmts.push(env.DB.prepare('DELETE FROM holidays'));
+  const seenH = new Set();
+  holidays.forEach((h, i) => {
+    if (!h.date || seenH.has(h.date)) return;
+    seenH.add(h.date);
+    stmts.push(
+      env.DB.prepare('INSERT INTO holidays (id,date,name,type) VALUES (?,?,?,?)')
+        .bind(h.id || `h_${i}`, h.date, h.name || null, h.type || 'national'),
+    );
+  });
+
+  // 4) 先清掉現有 DPC 員工的休假紀錄（待會重灌）
+  stmts.push(
+    env.DB.prepare("DELETE FROM leave_records WHERE employee_id IN (SELECT id FROM employees WHERE instr(department_ids, ?) > 0)").bind(D1_DPC_DEPT),
+  );
+
+  // 5) 刪掉已不在 Base44 DPC 名單裡的舊 DPC 員工（保留仍在的人 → device_token 不動）
+  if (emps.length) {
+    const ph = emps.map(() => '?').join(',');
+    stmts.push(
+      env.DB.prepare(`DELETE FROM employees WHERE instr(department_ids, ?) > 0 AND id NOT IN (${ph})`)
+        .bind(D1_DPC_DEPT, ...emps.map((e) => e.id)),
+    );
+  }
+
+  // 6) Upsert DPC 員工（用 Base44 id 當 D1 id；UPDATE 不碰 device_token）
+  emps.forEach((e, i) => {
+    stmts.push(
+      env.DB.prepare(
+        'INSERT INTO employees (id,name,english_name,department_ids,status,sort_order) VALUES (?,?,?,?,?,?) ' +
+          "ON CONFLICT(id) DO UPDATE SET name=excluded.name, english_name=excluded.english_name, department_ids=excluded.department_ids, status='active', sort_order=excluded.sort_order",
+      ).bind(e.id, e.name, e.english_name || '', JSON.stringify([D1_DPC_DEPT]), 'active', (i + 1) * 10),
+    );
+  });
+
+  // 7) 重灌 DPC 休假紀錄
+  for (const r of dpcRecords) {
+    const lt = ltById[r.leave_type_id];
+    const period = r.period || periodFromShort(lt ? lt.short_name : '');
+    stmts.push(
+      env.DB.prepare('INSERT INTO leave_records (id,employee_id,date,leave_type_id,period,note) VALUES (?,?,?,?,?,?)')
+        .bind(r.id || crypto.randomUUID(), r.employee_id, r.date, r.leave_type_id, period, r.note || null),
+    );
+  }
+
+  await env.DB.batch(stmts);
+
+  return {
+    at: new Date().toISOString(),
+    department: displayName,
+    employees: emps.length,
+    leave_records: dpcRecords.length,
+    leave_types: leaveTypes.length,
+    holidays: seenH.size,
+  };
 }
 
 // 一筆休假折算成「天數」：整天=1、半天(上/下午)=0.5。
