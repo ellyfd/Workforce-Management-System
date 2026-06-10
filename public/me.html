@@ -6,21 +6,11 @@
 <title>我的排休 · 開發處休假表</title>
 <link rel="stylesheet" href="app.css" />
 <style>
-  :root{ --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; --weekend:#fef2f2; --blue:#2563eb; }
-  *{ box-sizing:border-box; }
-  body{ margin:0; font-family:-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif; color:#1f2937; background:var(--bg); }
-  .page{ max-width:560px; margin:0 auto; padding:14px; }
-  h1{ font-size:20px; margin:0 0 2px; }
-  .muted{ color:var(--muted); font-size:13px; }
-  .card{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:12px; }
-  .row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  button{ font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--border); background:#fff; padding:7px 12px; }
-  button.primary{ background:var(--blue); color:#fff; border-color:var(--blue); }
-  select,input[type=text]{ font:inherit; padding:8px 10px; border:1px solid var(--border); border-radius:8px; width:100%; }
-  .nav{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:10px 0; }
+  /* 行事曆專用；其餘元件吃共用 app.css 以維持各頁一致 */
+  .app-main{ max-width:680px; }
   .cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
   .cal .wd{ text-align:center; font-size:12px; color:var(--muted); padding:4px 0; }
-  .cal .wd.we{ color:#ef4444; }
+  .cal .wd.we{ color:var(--red); }
   .day{ aspect-ratio:1/1; border:1px solid var(--border); border-radius:8px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; background:#fff; position:relative; }
   .day.we{ background:var(--weekend); }
   .day.holiday{ background:var(--holiday); }
@@ -32,23 +22,19 @@
   .day.half{ justify-content:flex-start; }
   .day .chip.am{ margin-top:2px; margin-bottom:auto; }
   .day .chip.pm{ margin-top:auto; margin-bottom:2px; }
+  .cal-nav{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:10px 0; }
   .summary{ display:flex; flex-wrap:wrap; gap:10px 14px; padding:8px 0; }
   .sumitem{ display:inline-flex; align-items:center; gap:5px; font-size:13px; color:#374151; }
   .sumitem .dot{ width:12px; height:12px; border-radius:4px; display:inline-block; }
   .list{ display:flex; flex-direction:column; gap:6px; }
   .emp{ padding:9px 12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; }
   .emp:hover{ background:#f3f4f6; }
-  .status{ color:var(--muted); padding:18px; text-align:center; }
-  .err{ color:#b91c1c; }
-  .link{ color:var(--blue); cursor:pointer; font-size:13px; background:none; border:none; padding:0; }
-  footer{ color:var(--muted); font-size:11px; margin-top:10px; text-align:center; }
 </style>
 </head>
 <body class="has-shell">
-<div class="page">
+<main class="app-main">
   <div id="app"><div class="status">載入中…</div></div>
-  <footer id="footer"></footer>
-</div>
+</main>
 
 <script src="app.js"></script>
 <script>
@@ -223,20 +209,22 @@ function showCalendar(){
   }
 
   app.innerHTML = `
-    <div class="row" style="justify-content:space-between;">
-      <div><h1>我的排休</h1><div class="muted">${me.name}${me.english_name?`（${me.english_name}）`:''}</div></div>
-      <button class="link" id="logout">切換身分</button>
+    <div class="page-head">
+      <h1>我的排休</h1>
+      <div class="sub">${me.name}${me.english_name?`（${me.english_name}）`:''}</div>
+      <div class="spacer"></div>
+      <button class="btn sm" id="logout">切換身分</button>
     </div>
     <div class="card">
-      <div class="nav">
-        <button id="prev">‹ 上個月</button>
+      <div class="cal-nav">
+        <button class="btn sm" id="prev">‹ 上個月</button>
         <b>${y} 年 ${m} 月</b>
-        <button id="next">下個月 ›</button>
+        <button class="btn sm" id="next">下個月 ›</button>
       </div>
       ${summary ? `<div class="summary">${summary}</div>` : '<div class="muted" style="font-size:12px;">本月尚無休假</div>'}
       <div class="row" style="margin:10px 0; gap:8px;">
         <select id="ltype" style="flex:1; min-width:140px;"><option value="">選擇假別…</option>${opts}</select>
-        <button id="rangeBtn" class="${rangeMode?'primary':''}" title="區間請假">區間</button>
+        <button class="btn ${rangeMode?'primary':''}" id="rangeBtn" title="區間請假">區間</button>
       </div>
       ${rangeMode ? `<div class="muted" style="font-size:12px; color:var(--blue);">區間模式：${rangeStart?`已選起點 ${rangeStart}，再點結束日`:'點第一天當起點'}</div>` : ''}
       <div class="cal">

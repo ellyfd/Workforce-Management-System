@@ -6,56 +6,34 @@
 <title>DPC 同步 · 開發處休假表</title>
 <link rel="stylesheet" href="app.css" />
 <style>
-  :root{ --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; --blue:#2563eb; --green:#16a34a; --red:#dc2626; }
-  *{ box-sizing:border-box; }
-  body{ margin:0; font-family:-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif; color:#1f2937; background:var(--bg); }
-  .page{ max-width:640px; margin:0 auto; padding:14px; }
-  .top{ display:flex; align-items:baseline; gap:12px; }
-  h1{ font-size:20px; margin:0; }
-  .spacer{ flex:1; }
-  a.nav-link{ font-size:13px; color:var(--blue); text-decoration:none; }
-  a.nav-link:hover{ text-decoration:underline; }
-  .muted{ color:var(--muted); font-size:13px; }
-  .card{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; margin-top:12px; }
+  /* 頁面專用；其餘吃共用 app.css */
+  .app-main{ max-width:640px; }
   .card h2{ font-size:15px; margin:0 0 4px; }
-  .field{ display:flex; flex-direction:column; gap:4px; margin-top:12px; }
-  .field label{ font-size:12px; color:var(--muted); }
-  input[type=password]{ font:inherit; padding:9px 11px; border:1px solid var(--border); border-radius:8px; }
-  button{ font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--border); background:#fff; padding:9px 16px; }
-  button.primary{ background:var(--blue); color:#fff; border-color:var(--blue); }
-  button:disabled{ opacity:.5; cursor:default; }
-  .row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; }
   .status-line{ font-size:13px; }
-  .ok{ color:var(--green); } .err{ color:var(--red); }
   .kv{ display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13px; margin-top:8px; }
   .kv .k{ color:var(--muted); }
   pre{ background:#f3f4f6; border-radius:8px; padding:10px; font-size:12px; overflow:auto; }
-  footer{ color:var(--muted); font-size:11px; margin-top:12px; text-align:center; }
 </style>
 </head>
 <body class="has-shell">
-<div class="page">
-  <div class="top">
-    <h1>DPC 同步</h1>
-  </div>
-  <div class="muted">DPC 資料每天早上 8 點自動同步進系統;也可在此手動立即同步。</div>
+<main class="app-main">
+  <div class="page-head"><h1>DPC 同步</h1><div class="sub">每天早上 8 點自動同步;也可在此手動立即同步。</div></div>
 
   <div class="card">
     <h2>DPC 同步</h2>
     <div id="statusBox" class="muted" style="margin-top:8px;">讀取同步狀態中…</div>
 
-    <div class="field">
+    <div class="field" style="margin-top:12px;">
       <label>同步密語(SYNC_SECRET,會記在本機瀏覽器)</label>
       <input id="secret" type="password" placeholder="輸入密語…" />
     </div>
-    <div class="row">
-      <button class="primary" id="syncBtn">立即同步</button>
+    <div class="row" style="margin-top:14px;">
+      <button class="btn primary" id="syncBtn">立即同步</button>
       <span id="result" class="status-line"></span>
     </div>
     <div class="muted" style="margin-top:10px;">只同步 DPC 的人員與休假;<b>假別與假日不同步</b>,請於「休假設定」頁維護。</div>
   </div>
-  <footer id="footer"></footer>
-</div>
+</main>
 
 <script src="app.js"></script>
 <script>
