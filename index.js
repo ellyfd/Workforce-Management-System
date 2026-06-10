@@ -94,6 +94,12 @@ export default {
         return json(r.results);
       }
 
+      // 公開部門清單（儀表板/篩選用）
+      if (pathname === '/api/departments' && method === 'GET') {
+        const r = await env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all();
+        return json(r.results);
+      }
+
       // 公開假日清單（前端區間請假用來略過國定假日）
       if (pathname === '/api/holidays' && method === 'GET') {
         const year = url.searchParams.get('year');
@@ -422,6 +428,15 @@ export default {
         return json({ ok: true });
       }
 
+      // 清理重複休假紀錄(同員工+日期+時段+假別只留一筆)
+      if (pathname === '/api/admin/dedupe-leaves' && method === 'POST') {
+        if (!adminOk(env, request)) return json({ error: 'unauthorized' }, 401);
+        const r = await env.DB.prepare(
+          'DELETE FROM leave_records WHERE rowid NOT IN (SELECT MIN(rowid) FROM leave_records GROUP BY employee_id, date, period, leave_type_id)',
+        ).run();
+        return json({ ok: true, removed: r.meta ? r.meta.changes : 0 });
+      }
+
       // ── 當日儀表板 ──────────────────────────────────────────────
       if (pathname === '/api/dashboard' && method === 'GET') {
         const now = new Date();
@@ -681,37 +696,69 @@ async function buildLeaveCheck(env, empId, dates) {
   return { threshold, dept_size: deptMemberIds.size, results };
 }
 
-async function buildDashboard(env, date, deptId) {
-  const [emps, depts, types, recs] = await Promise.all([
-    env.DB.prepare("SELECT id, name, english_name, department_ids FROM employees WHERE status = 'active'").all(),
+async function buildDashboard(env, date, deptParam) {
+  const deptIds = (deptParam || '').split(',').filter(Boolean);
+  const [emps, depts, types, recs, hol] = await Promise.all([
+    env.DB.prepare("SELECT id, name, english_name, department_ids, deputy_1, deputy_2 FROM employees WHERE status = 'active'").all(),
     env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
     env.DB.prepare('SELECT * FROM leave_types').all(),
     env.DB.prepare('SELECT * FROM leave_records WHERE date = ?').bind(date).all(),
+    env.DB.prepare('SELECT 1 FROM holidays WHERE date = ? LIMIT 1').bind(date).first(),
   ]);
 
   const typeById = Object.fromEntries(types.results.map((t) => [t.id, t]));
   const deptById = Object.fromEntries(depts.results.map((d) => [d.id, d]));
-  const inDept = (e) => !deptId || safeIds(e.department_ids).includes(deptId);
+  const empByIdAll = Object.fromEntries(emps.results.map((e) => [e.id, e]));
+  const inScope = (e) => !deptIds.length || safeIds(e.department_ids).some((id) => deptIds.includes(id));
+  const isBiz = (tid) => { const t = typeById[tid]; return /差/.test(t ? (t.short_name || t.name || '') : ''); };
 
-  const active = emps.results.filter(inDept);
-  const empById = Object.fromEntries(active.map((e) => [e.id, e]));
-  const expected = active.length;
+  // 非工作日（週末 / 國定假日）：應到 0、出勤率不計
+  const dow = new Date(date + 'T00:00:00').getDay();
+  const isNonWorking = dow === 0 || dow === 6 || !!hol;
+
+  const scoped = emps.results.filter(inScope);
+  const scopedIds = new Set(scoped.map((e) => e.id));
+  const expected = isNonWorking ? 0 : scoped.length;
+
+  // 當日所有人(全公司)的請假，供職代衝突判斷
+  const leavesByEmp = {};
+  for (const r of recs.results) (leavesByEmp[r.employee_id] ||= []).push(r);
+  const onLeaveAll = new Set(recs.results.map((r) => r.employee_id));
 
   const byType = {};
   const onLeaveList = [];
   const onLeaveEmp = new Set();
-
   for (const r of recs.results) {
-    const e = empById[r.employee_id];
-    if (!e) continue; // 不在篩選範圍內
+    if (!scopedIds.has(r.employee_id)) continue;
+    const e = empByIdAll[r.employee_id];
     onLeaveEmp.add(e.id);
     const t = typeById[r.leave_type_id];
     const label = t ? t.short_name || t.name : '休';
     const color = t ? t.color || '#64748b' : '#64748b';
-    const key = r.leave_type_id || '?';
-    (byType[key] ||= { name: t ? t.name : '未分類', short_name: label, color, count: 0 }).count += 1;
+    (byType[r.leave_type_id || '?'] ||= { name: t ? t.name : '未分類', short_name: label, color, count: 0 }).count += 1;
     const dept = safeIds(e.department_ids).map((id) => (deptById[id] || {}).name).filter(Boolean).join('、');
     onLeaveList.push({ name: e.name, english_name: e.english_name || '', department: dept, label, period: r.period || 'full', color });
+  }
+
+  // 每部門當日請假人數 + 在職數(算 1/3 上限)
+  const deptActive = {}, deptOnLeave = {};
+  for (const e of emps.results) for (const id of safeIds(e.department_ids)) deptActive[id] = (deptActive[id] || 0) + 1;
+  for (const id of onLeaveAll) { const e = empByIdAll[id]; if (e) for (const d of safeIds(e.department_ids)) (deptOnLeave[d] ||= new Set()).add(id); }
+
+  // 異常請假：即時重算(不信舊旗標)。職代當天也請假 / 部門當天達 1/3。出差不算。
+  const warnings = [];
+  for (const e of scoped) {
+    const myLeaves = leavesByEmp[e.id]; if (!myLeaves) continue;
+    if (myLeaves.every((r) => isBiz(r.leave_type_id))) continue; // 全是出差→略過
+    const reasons = [];
+    const deps = [e.deputy_1, e.deputy_2].filter(Boolean).filter((id) => onLeaveAll.has(id) && (leavesByEmp[id] || []).some((r) => !isBiz(r.leave_type_id)));
+    if (deps.length) reasons.push(`職代 ${deps.map((id) => (empByIdAll[id] || {}).name || '?').join('、')} 當天也請假`);
+    for (const d of safeIds(e.department_ids)) {
+      const lim = Math.floor((deptActive[d] || 0) / 3);
+      const cnt = (deptOnLeave[d] || new Set()).size;
+      if (lim > 0 && cnt >= lim) { reasons.push(`${(deptById[d] || {}).name || '部門'}當天請假 ${cnt} 人(達 1/3 上限)`); break; }
+    }
+    if (reasons.length) warnings.push({ name: e.name, english_name: e.english_name || '', reasons });
   }
 
   const onCount = onLeaveEmp.size;
@@ -720,13 +767,14 @@ async function buildDashboard(env, date, deptId) {
 
   return {
     date,
-    department_id: deptId || null,
+    is_non_working: isNonWorking,
     expected,
     on_duty: onDuty,
     on_leave_count: onCount,
     attendance_rate: rate,
     by_type: Object.values(byType).sort((a, b) => b.count - a.count),
     on_leave_list: onLeaveList,
+    warnings,
     departments: depts.results,
     updated_at: new Date().toISOString(),
   };

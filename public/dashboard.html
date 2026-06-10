@@ -6,35 +6,41 @@
 <title>儀表板 · 開發處休假表</title>
 <link rel="stylesheet" href="app.css" />
 <style>
+  .greet h1{ font-size:24px; margin:0; }
+  .greet .sub{ color:var(--muted); font-size:13px; margin-top:2px; }
+  .datebar{ display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
+  .datebar .dlabel{ flex:1; text-align:center; font-weight:600; }
+  .datebar input[type=date]{ border:none; font-weight:600; }
+  .deptcard{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:12px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .deptcard label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; cursor:pointer; }
   .leave-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
   .leave-item:last-child{ border-bottom:none; }
   .leave-item .nm{ font-weight:600; }
   .leave-item .dp{ color:var(--muted); font-size:12px; }
   .leave-item .sp{ flex:1; }
   .typewrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  .warn-item{ display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .warn-item:last-child{ border-bottom:none; }
+  .warn-item .nm{ font-weight:600; min-width:72px; }
+  .warn-item .rs{ color:#b45309; }
+  .nwk{ display:inline-block; background:#f3f4f6; color:var(--muted); font-size:12px; border-radius:6px; padding:1px 8px; margin-left:8px; }
 </style>
 </head>
 <body class="has-shell">
 <main class="app-main">
-  <div class="page-head">
-    <h1>儀表板</h1>
-    <span class="sub" id="hello"></span>
+  <div class="greet">
+    <h1 id="hello">儀表板</h1>
+    <div class="sub" id="todayLabel"></div>
   </div>
 
-  <div class="card" style="margin-bottom:12px;">
-    <div class="row" style="justify-content:space-between;">
-      <div class="row">
-        <button class="btn sm" id="prev">‹</button>
-        <input type="date" id="date" />
-        <button class="btn sm" id="next">›</button>
-        <button class="btn sm" id="today">今天</button>
-      </div>
-      <div class="row">
-        <span class="muted">部門</span>
-        <select id="dept"><option value="">全部</option></select>
-      </div>
-    </div>
+  <div class="datebar">
+    <button class="btn sm" id="prev">‹</button>
+    <input type="date" id="date" class="dlabel" />
+    <button class="btn sm" id="next">›</button>
+    <button class="btn sm" id="today">今天</button>
   </div>
+
+  <div class="deptcard"><span class="muted">部門：</span><span id="deptboxes" class="row" style="gap:14px;"></span></div>
 
   <div id="content"><div class="status">載入中…</div></div>
 </main>
@@ -43,28 +49,37 @@
 <script>
 const { esc } = App;
 const PERIOD = { full:'整天', morning:'上午', afternoon:'下午' };
+const DEVICE = localStorage.getItem('dev_device_token') || '';
 let cur = new Date();
-let deptId = '';
+let DEPTSEL = new Set();
+let me = null;
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function greetWord(){ const h = new Date().getHours(); return h < 11 ? '早安' : h < 18 ? '午安' : '晚安'; }
 
-async function loadDepts(){
+async function boot(){
+  // 取得本裝置綁定者(打招呼用)
+  try { if (DEVICE){ const r = await fetch(`${App.API_BASE}/api/me`, { headers:{ 'X-Device-Token': DEVICE } }); if (r.ok) me = await r.json(); } } catch(_){}
+  document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
+  // 部門勾選
   try {
-    const r = await App.api('/api/admin/departments');
-    if (!r.ok) return;
-    const ds = await r.json();
-    const sel = document.getElementById('dept');
-    ds.forEach(d => { const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; sel.appendChild(o); });
-  } catch (_) {}
+    const ds = await (await fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'})).json();
+    document.getElementById('deptboxes').innerHTML = ds.map(d=>
+      `<label><input type="checkbox" class="df" value="${esc(d.id)}"/> ${esc(d.name)}</label>`).join('') || '<span class="muted">無部門</span>';
+    document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); load(); });
+  } catch(_){}
+  load();
 }
 
 async function load(){
   document.getElementById('date').value = ymd(cur);
+  document.getElementById('todayLabel').textContent = `${cur.getFullYear()}年${pad(cur.getMonth()+1)}月${pad(cur.getDate())}日（${'日一二三四五六'[cur.getDay()]}）`;
   const c = document.getElementById('content');
   c.innerHTML = '<div class="status">載入中…</div>';
   try {
-    const r = await fetch(`${App.API_BASE}/api/dashboard?date=${ymd(cur)}${deptId?`&dept=${deptId}`:''}`, { cache:'no-store' });
+    const dept = [...DEPTSEL].join(',');
+    const r = await fetch(`${App.API_BASE}/api/dashboard?date=${ymd(cur)}${dept?`&dept=${dept}`:''}`, { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     render(await r.json());
   } catch (e) {
@@ -73,15 +88,12 @@ async function load(){
 }
 
 function render(s){
-  const hour = new Date().getHours();
-  document.getElementById('hello').textContent = `${ymd(cur)}（${'日一二三四五六'[cur.getDay()]}）`;
-
-  const types = (s.by_type||[]);
+  const types = s.by_type || [];
   const typeChips = types.length
     ? `<div class="typewrap">${types.map(t=>`<span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)} ${t.count}</span>`).join('')}</div>`
     : '<div class="val" style="font-size:16px;color:var(--muted);margin-top:8px;">無請假</div>';
 
-  const list = (s.on_leave_list||[]);
+  const list = s.on_leave_list || [];
   const listHtml = list.length
     ? list.map(p=>`<div class="leave-item">
         <div><div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>${p.department?`<div class="dp">${esc(p.department)}</div>`:''}</div>
@@ -90,27 +102,47 @@ function render(s){
       </div>`).join('')
     : '<div class="empty">📅<div style="margin-top:8px;">今日無休假人員</div></div>';
 
+  const warns = s.warnings || [];
+  const warnCard = warns.length ? `
+    <div class="card" style="margin-bottom:12px;border-color:#fde68a;">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px;"><b>⚠️ 異常請假</b><span class="muted">${warns.length} 筆</span></div>
+      ${warns.map(w=>`<div class="warn-item"><span class="nm">${esc(w.name)}</span><span class="rs">${w.reasons.map(esc).join('；')}</span></div>`).join('')}
+    </div>` : '';
+
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
-      <div class="card kpi"><div class="label">👥 應到人數</div><div class="val">${s.expected}</div></div>
+      <div class="card kpi"><div class="label">👥 應到人數</div><div class="val">${s.expected}${s.is_non_working?'<span class="nwk">非工作日</span>':''}</div></div>
       <div class="card kpi"><div class="label">📈 出勤率</div><div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div></div>
       <div class="card kpi"><div class="label">🗓️ 請假人數</div><div class="val">${s.on_leave_count}</div></div>
       <div class="card kpi"><div class="label">🏷️ 假別分佈</div>${typeChips}</div>
     </div>
+    ${warnCard}
     <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:6px;"><b>休假人員</b><span class="muted">${list.length} 人</span></div>
+      <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+        <b>休假人員 <span class="muted">${list.length} 人</span></b>
+        <button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>
+      </div>
       ${listHtml}
     </div>`;
+
+  document.getElementById('dedupe').onclick = dedupe;
 }
 
-function go(delta){ cur.setDate(cur.getDate()+delta); load(); }
-document.getElementById('prev').onclick = ()=>go(-1);
-document.getElementById('next').onclick = ()=>go(1);
+async function dedupe(){
+  if (!confirm('清理重複的休假記錄(同員工+日期+時段+假別只留一筆)?')) return;
+  const r = await App.adminApi('/api/admin/dedupe-leaves', { method:'POST' });
+  if (!r.ok){ alert('清理失敗(可能需要管理密鑰)'); return; }
+  const d = await r.json();
+  alert(`完成,清掉 ${d.removed||0} 筆重複。`);
+  load();
+}
+
+document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-1); load(); };
+document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+1); load(); };
 document.getElementById('today').onclick = ()=>{ cur = new Date(); load(); };
 document.getElementById('date').onchange = (e)=>{ if(e.target.value){ cur = new Date(e.target.value+'T00:00:00'); load(); } };
-document.getElementById('dept').onchange = (e)=>{ deptId = e.target.value; load(); };
 
-(async()=>{ await loadDepts(); load(); })();
+boot();
 </script>
 </body>
 </html>
