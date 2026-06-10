@@ -112,7 +112,9 @@
     <h1 id="title">開發處休假表</h1>
     <span class="sub" id="subtitle"></span>
     <span class="spacer"></span>
-    <a class="nav-link" href="me.html">我的排休 →</a>
+    <a class="nav-link" href="me.html">我的排休</a>
+    <a class="nav-link" href="stats.html">統計</a>
+    <a class="nav-link" href="manage.html">管理</a>
   </header>
 
   <div class="toolbar">
@@ -171,6 +173,20 @@ function periodOf(label){
   return 'full';
 }
 
+// 把一格休假（可能是字串或 {label,period,color} 物件）整理成 {label, p, color}。
+// p：'full' 整天、'am' 上午半天、'pm' 下午半天。
+function resolveCell(lv, legend){
+  if (!lv) return null;
+  const label = typeof lv === 'string' ? lv : (lv.label || '');
+  const rec = (typeof lv === 'object' && lv.period) ? lv.period : 'full';
+  let p;
+  if (rec === 'morning') p = 'am';
+  else if (rec === 'afternoon') p = 'pm';
+  else p = periodOf(label); // full：再用名稱判斷（如「午休」本身就是半天）
+  const color = (typeof lv === 'object' && lv.color) ? lv.color : colorFor(label, legend);
+  return { label, p, color };
+}
+
 function render(data){
   const year = data.year, month = data.month;
   const days = buildDays(year, month);
@@ -220,13 +236,12 @@ function render(data){
         const isHol = holidays.has(day.date);
         const baseCls = isHol ? 'holiday' : (day.weekend ? 'weekend' : '');
         const todayCls = day.date === today ? ' today' : '';
-        const mark = m.leaves ? m.leaves[day.date] : null;
-        if (mark){
-          const p = periodOf(mark);
-          if (p === 'full') {
-            html += `<td class="day ${baseCls}${todayCls}"><div class="chip" style="background:${colorFor(mark,legend)}">${mark}</div></td>`;
+        const cell = resolveCell(m.leaves ? m.leaves[day.date] : null, legend);
+        if (cell){
+          if (cell.p === 'full') {
+            html += `<td class="day ${baseCls}${todayCls}"><div class="chip" style="background:${cell.color}">${cell.label}</div></td>`;
           } else {
-            html += `<td class="day ${baseCls}${todayCls} half"><div class="chip ${p}" style="background:${colorFor(mark,legend)}">${mark}</div></td>`;
+            html += `<td class="day ${baseCls}${todayCls} half"><div class="chip ${cell.p}" style="background:${cell.color}">${cell.label}</div></td>`;
           }
         } else {
           html += `<td class="day ${baseCls}${todayCls}"></td>`;

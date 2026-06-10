@@ -8,8 +8,10 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
 
 ```
 瀏覽器 ──→ Cloudflare Worker（workforcemanagement）
-              ├─ /            → public/index.html（全部排休：月曆總表）
-              ├─ /me          → public/me.html  （我的排休：個人頁）
+              ├─ /            → public/index.html （全部排休：月曆總表）
+              ├─ /me          → public/me.html     （我的排休：個人頁）
+              ├─ /manage      → public/manage.html （休假管理：改任一員工）
+              ├─ /stats       → public/stats.html  （儀表板統計）
               └─ /api/*       → index.js（API）
                                   └─→ D1 資料庫 dpc-hub
 ```
@@ -22,6 +24,8 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
 - `index.js`：Worker 後端 API。
 - `public/index.html`：全部排休（月曆總表,讀 `/api/calendar`）。
 - `public/me.html`：我的排休（個人請假/改假,讀寫 `/api/my-leaves` 等）。
+- `public/manage.html`：休假管理（改任一員工的休假,讀寫 `/api/admin/*`）。
+- `public/stats.html`：儀表板統計（讀 `/api/stats`）。
 - `wrangler.toml`：Worker 設定（D1 綁定 + 靜態資源 `public/`）。
 
 ## 網址
@@ -45,6 +49,15 @@ Cloudflare Worker 上,資料存在 Cloudflare D1 資料庫。對齊參考專案 
 | GET | `/api/my-leaves?year` | 我的休假 |
 | POST | `/api/my-leaves` `{date,leave_type_id,period}` | 新增/覆蓋一筆休假 |
 | DELETE | `/api/my-leaves/:id` | 刪除一筆休假 |
+| GET | `/api/admin/meta` | 管理頁用：部門/員工/假別清單 |
+| GET | `/api/admin/leaves?employee_id&year` | 某員工的休假紀錄 |
+| POST | `/api/admin/leaves` `{employee_id,date,leave_type_id,period,note}` | 新增/覆蓋任一員工的休假 |
+| DELETE | `/api/admin/leaves/:id` | 刪除任一筆休假 |
+| GET | `/api/stats?year` | 儀表板統計（各假別/部門/員工/月份） |
+
+> **管理權限**：`/api/admin/*` 在未設定環境變數 `ADMIN_KEY` 時為開放（內部低風險）。
+> 要上鎖就在 Cloudflare 後台或 `wrangler secret put ADMIN_KEY` 設一組密鑰,之後管理頁
+> 會要求輸入,請求帶 `X-Admin-Key` 才放行。
 
 ### `/api/calendar` 回傳格式
 
@@ -81,5 +94,5 @@ npx wrangler deploy   # 手動部署（平時靠 push main 自動部署）
 
 ## 後續規劃
 
-- 管理頁:新增/刪除任意員工的休假、維護部門/假別(寫回 D1)。
-- 簡單儀表板:各假別/各部門的請假統計。
+- 管理頁再擴充:維護部門、員工、假別本身（目前僅維護休假紀錄）。
+- 統計匯出（CSV）與自訂日期區間。
