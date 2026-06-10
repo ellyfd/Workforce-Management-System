@@ -16,15 +16,46 @@
     {
       "name": "特工",
       "members": [
-        { "name": "游怡專", "code": "", "leaves": { "2026-12-16": "休" } },
-        { "name": "梁景翔", "code": "", "leaves": { "2026-12-21": "休", "2026-12-22": "休", "2026-12-23": "休", "2026-12-24": "休" } }
+        { "name": "游怡專", "code": "Artie Yu", "leaves": { "2026-12-16": "休" } },
+        { "name": "梁景翔", "code": "Jason Liang", "leaves": { "2026-12-21": "休", "2026-12-22": "休", "2026-12-23": "休", "2026-12-24": "休" } }
       ]
     },
     {
       "name": "估碼",
       "members": [
-        { "name": "陳慧芬", "code": "" },
-        { "name": "李育儒", "code": "張嘉芸", "leaves": { "2026-12-17": "休", "2026-12-18": "休" } }
+        { "name": "陳慧芬", "code": "Winnie Chen" },
+        { "name": "李育儒", "code": "Josie Lee", "leaves": { "2026-12-17": "休", "2026-12-18": "休" } }
+      ]
+    },
+    {
+      "name": "TD-台北",
+      "members": [
+        { "name": "林佳盈", "code": "Lillian Lin" },
+        { "name": "杜旭烈", "code": "David Tu" },
+        { "name": "吳彥頡", "code": "Martin Wu" },
+        { "name": "黃姿華", "code": "Zizi Huang" },
+        { "name": "吳阿秀", "code": "Amy Wu" },
+        { "name": "蔡姿瑜", "code": "Stacy Tsai" }
+      ]
+    },
+    {
+      "name": "TD-非台北",
+      "members": [
+        { "name": "王儷學", "code": "Sharon Wang" },
+        { "name": "林佳燕", "code": "Vivian Lin" },
+        { "name": "賴昱婷", "code": "Irene Lai" },
+        { "name": "顏哲徽", "code": "Caprik Yen" },
+        { "name": "黃郁翔", "code": "Sammi Huang" },
+        { "name": "洪珮慈", "code": "Penny Hung" },
+        { "name": "蔡畇婕", "code": "Sherry Tsai" },
+        { "name": "黃綉琪", "code": "Angel Huang" },
+        { "name": "邱珮玄", "code": "Catherine Chiu" },
+        { "name": "卓婉禎", "code": "Olivia Cho" },
+        { "name": "張璿", "code": "Vivi Chang" },
+        { "name": "呂玟萱", "code": "" },
+        { "name": "林琬庭", "code": "Winnie Lin" },
+        { "name": "王婉慈", "code": "Dolly Wang" },
+        { "name": "黃湘麟", "code": "Lynn Huang" }
       ]
     }
   ],
