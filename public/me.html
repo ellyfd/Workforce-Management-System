@@ -31,6 +31,21 @@
   .list{ display:flex; flex-direction:column; gap:6px; }
   .emp{ padding:9px 12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; }
   .emp:hover{ background:#f3f4f6; }
+
+  /* 手機：縮小日曆格內距與字級，避免色塊溢出格子 */
+  @media (max-width:560px){
+    .app-main{ padding-left:8px; padding-right:8px; }
+    .card{ padding:12px; }
+    .cal{ gap:3px; }
+    .day{ padding:2px; border-radius:6px; overflow:hidden; }
+    .day .d{ font-size:12px; }
+    .day .hol{ font-size:10px; margin-top:0; }
+    .day .chip{ font-size:12px; padding:2px 0; border-radius:4px; }
+    .cal .wd{ font-size:12px; padding:2px 0; }
+    .summary{ gap:6px 10px; }
+    .sumitem{ font-size:13px; }
+    .cal-nav b{ font-size:14px; }
+  }
 </style>
 </head>
 <body class="has-shell">

@@ -131,6 +131,16 @@
   .status { padding: 24px; color: var(--muted); font-size: 14px; }
   .err { color: #b91c1c; }
   footer { color: var(--muted); font-size:14px; margin-top: 8px; }
+
+  /* 手機：縮窄欄寬讓表格塞下更多日子，捲動區不被底部導覽列遮住 */
+  @media (max-width: 560px) {
+    :root { --name-w: 80px; --day-w: 32px; --row-h: 36px; --head-h: 42px; }
+    .page { padding: 10px 8px 4px; }
+    header.top h1 { font-size: 18px; }
+    .scroll { max-height: calc(100dvh - 230px); }
+    .chip { font-size: 11px; }
+    thead th.tot, tbody td.tot { min-width: 40px; width: 40px; }
+  }
 </style>
 </head>
 <body class="has-shell">

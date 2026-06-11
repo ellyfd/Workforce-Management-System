@@ -13,6 +13,7 @@
     people: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
     leave: svg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>'),
     sync: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>'),
+    more: svg('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>'),
   };
   const NAV_MAIN = [
     { href: 'dashboard.html', label: '儀表板', icon: 'dash' },
@@ -76,6 +77,17 @@
         <span class="chev">›</span>
       </button>` : '';
     return `<aside class="app-sidebar" id="appSidebar">${user || '<div class="brand">開發處休假表</div>'}<nav class="app-nav">${nav}</nav></aside>`;
+  }
+
+  // 手機底部導覽列：主要功能直達 + 「更多」開啟抽屜（含個人資料與管理項目）
+  function buildBottomNav() {
+    const links = NAV_MAIN.map((it) => {
+      const active = it.href.replace(/\.html$/, '') === cur ? ' active' : '';
+      return `<a class="${active.trim()}" href="${it.href}">${ICONS[it.icon] || ''}<span>${esc(it.label)}</span></a>`;
+    }).join('');
+    const moreActive = ADMIN_PAGES.includes(cur) ? ' active' : '';
+    return `<nav class="app-bottomnav" id="appBottomNav">${links}` +
+      `<button class="${moreActive.trim()}" id="appMore" aria-label="更多">${ICONS.more}<span>更多</span></button></nav>`;
   }
 
   /* ── 個人資料抽屜 ─────────────────────────────────── */
@@ -235,12 +247,14 @@
     document.body.insertAdjacentHTML('afterbegin',
       buildSidebar(isAdmin, me) +
       `<div class="app-scrim" id="appScrim"></div>` +
-      `<header class="app-topbar"><button class="ham" id="appHam" aria-label="選單">☰</button><b>開發處休假表</b></header>`,
+      buildBottomNav(),
     );
     const sb = document.getElementById('appSidebar');
     const scrim = document.getElementById('appScrim');
     const close = () => { sb.classList.remove('open'); scrim.classList.remove('show'); };
-    document.getElementById('appHam').onclick = () => { sb.classList.add('open'); scrim.classList.add('show'); };
+    const open = () => { sb.classList.add('open'); scrim.classList.add('show'); };
+    const moreBtn = document.getElementById('appMore');
+    if (moreBtn) moreBtn.onclick = open;
     scrim.onclick = close;
     sb.querySelectorAll('a').forEach((a) => a.addEventListener('click', close));
     const ub = document.getElementById('appUser');
