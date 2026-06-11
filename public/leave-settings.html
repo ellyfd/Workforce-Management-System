@@ -8,6 +8,21 @@
 <style>
   .swatch{ width:22px; height:22px; border-radius:6px; border:1px solid rgba(0,0,0,.1); display:inline-block; vertical-align:middle; }
   .note{ background:#fffbeb; border:1px solid #fde68a; color:#92400e; font-size:14px; border-radius:8px; padding:8px 10px; margin-bottom:12px; }
+  /* 操作改用圖示（✏️ 編輯、🗑️ 刪除），省欄寬 */
+  .acts{ white-space:nowrap; text-align:right; }
+  .acts .iconbtn{ font-size:18px; line-height:1; }
+  .acts .iconbtn.del:hover{ background:#fee2e2; }
+  .short{ display:none; }
+  @media (max-width:560px){
+    .full{ display:none; } .short{ display:inline; }
+    /* 假日篩選列維持單行：用年/月下拉導覽即可，隱藏標題/計數/‹›）*/
+    .hohead{ flex-wrap:nowrap; gap:6px; }
+    .hohead .filt{ flex:1; flex-wrap:nowrap; gap:6px; min-width:0; }
+    .hohead .ttl, .hohead .cnt, .hohead .yrnav{ display:none; }
+    .hohead select{ padding:7px 6px; min-width:0; flex:1; }
+    .hohead #add{ flex:none; padding:8px 12px; }
+    table.data th, table.data td{ padding:8px 8px; }
+  }
 </style>
 </head>
 <body class="has-shell">
@@ -43,13 +58,13 @@ function renderLt(){
       <td><span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)}</span></td>
       <td>${Number(t.day_value)||0 ? `<b>${Number(t.day_value)}</b> 天` : '<span class="muted">不計</span>'}</td>
       <td>${t.sort_order??0}</td>
-      <td class="row"><button class="iconbtn" data-edit="${esc(t.id)}">編輯</button><button class="iconbtn" data-del="${esc(t.id)}">刪除</button></td>
+      <td class="acts"><button class="iconbtn" data-edit="${esc(t.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-del="${esc(t.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px;">
         <b>假別 <span class="muted">（${types.length}）</span></b>
-        <button class="btn primary" id="add">＋ 新增假別</button>
+        <button class="btn primary" id="add"><span class="full">＋ 新增假別</span><span class="short">＋</span></button>
       </div>
       <div class="table-wrap"><table class="data">
         <thead><tr><th>顏色</th><th>名稱</th><th>簡稱</th><th>計入天數</th><th>排序</th><th></th></tr></thead>
@@ -103,22 +118,22 @@ function renderHo(){
   const list = holMonth ? holidays.filter(h=>Number((h.date||'').slice(5,7))===Number(holMonth)) : holidays;
   const rows = list.map(h=>`
     <tr>
-      <td><b>${esc(h.date)}</b> <span class="muted">${'日一二三四五六'[new Date(h.date+'T00:00:00').getDay()]}</span></td>
+      <td><b>${esc((h.date||'').slice(5))}</b> <span class="muted">${'日一二三四五六'[new Date(h.date+'T00:00:00').getDay()]}</span></td>
       <td>${esc(h.name||'')||'<span class="muted">—</span>'}</td>
       <td>${hoTag(h.type)}</td>
-      <td class="row"><button class="iconbtn" data-edit="${esc(h.id)}">編輯</button><button class="iconbtn" data-del="${esc(h.id)}">刪除</button></td>
+      <td class="acts"><button class="iconbtn" data-edit="${esc(h.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-del="${esc(h.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
-        <div class="row"><b>假日</b>
-          <button class="btn sm" id="py">‹</button>
+      <div class="row hohead" style="justify-content:space-between;margin-bottom:10px;">
+        <div class="row filt"><b class="ttl">假日</b>
+          <button class="btn sm yrnav" id="py">‹</button>
           <select id="hoYear" title="選擇年度">${App.yearOptions(holYear)}</select>
-          <button class="btn sm" id="ny">›</button>
+          <button class="btn sm yrnav" id="ny">›</button>
           <select id="hoMonth" title="篩選月份">${App.monthOptions(holMonth, '全部月份')}</select>
-          <span class="muted">（${list.length}）</span>
+          <span class="muted cnt">（${list.length}）</span>
         </div>
-        <button class="btn primary" id="add">＋ 新增假日</button>
+        <button class="btn primary" id="add"><span class="full">＋ 新增假日</span><span class="short">＋</span></button>
       </div>
       <div class="table-wrap"><table class="data">
         <thead><tr><th>日期</th><th>名稱</th><th>類型</th><th></th></tr></thead>
