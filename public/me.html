@@ -38,7 +38,7 @@
   .emp:hover{ background:#f3f4f6; }
   /* 假別筆刷：桌機用色票 chip，手機改用下拉 */
   .lchips{ display:flex; flex-wrap:wrap; gap:6px; flex:1; align-content:flex-start; }
-  .lchip{ border:1.5px solid var(--c); color:var(--c); background:#fff; border-radius:999px; padding:5px 12px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2; transition:background .12s, color .12s; }
+  .lchip{ box-sizing:border-box; min-width:54px; text-align:center; border:1.5px solid var(--c); color:var(--c); background:#fff; border-radius:999px; padding:5px 10px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2; transition:background .12s, color .12s; }
   .lchip:hover{ background:#f8fafc; }
   .lchip.on{ background:var(--c); color:#fff; }
   .lsel{ display:none; }
@@ -315,8 +315,8 @@ function startTour(){
   const steps = [
     { sel:'#brushRow', title:'① 選假別', body:'先點一個假別當「筆刷」（電腦是色塊、手機是下拉選單）。' },
     { sel:'.cal', title:'② 點日期填入', body:'點日曆上的日期，就會填入剛剛選的假別。' },
-    { sel:'#rangeBtn', title:'區間請假', body:'想一次填一整段，先按「區間」再點起訖兩天。' },
     { sel:'.cal', title:'取消請假', body:'雙擊已填入的格子，確認後即可取消。' },
+    { sel:'#rangeBtn', title:'區間請假', body:'想一次填一整段，先按「區間」再點起訖兩天。' },
   ];
   if (document.querySelector('.tour-mask')) return; // 避免重複開啟
   let i = 0;
