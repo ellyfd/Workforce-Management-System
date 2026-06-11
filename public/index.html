@@ -430,7 +430,7 @@ function render(data){
         return `<option value="${escq(v)}" ${typeFilter===v?'selected':''}>${t.name||t.short_name}</option>`;
       }).join('');
       tbar.innerHTML = '<span class="muted">只看假別：</span><select id="tfsel" class="ymsel">'+opts+'</select>';
-      document.getElementById('tfsel').onchange = (e)=>{ typeFilter = e.target.value; render(LAST); };
+      document.getElementById('tfsel').onchange = (e)=>{ typeFilter = e.target.value; render(LAST); scrollToFirstMatch(); };
     } else {
       let h = '<span class="muted">只看假別：</span>'
         + `<button class="tchip tall${typeFilter===''?' on':''}" data-tf="">全部</button>`;
@@ -439,7 +439,7 @@ function render(data){
         return `<button class="tchip${typeFilter===v?' on':''}" data-tf="${escq(v)}" style="--c:${t.color||'#64748b'}" title="${escq(t.name||v)}">${t.short_name||t.name}</button>`;
       }).join('');
       tbar.innerHTML = h;
-      tbar.querySelectorAll('.tchip').forEach(b=>b.onclick=()=>{ typeFilter = b.dataset.tf; render(LAST); });
+      tbar.querySelectorAll('.tchip').forEach(b=>b.onclick=()=>{ typeFilter = b.dataset.tf; render(LAST); scrollToFirstMatch(); });
     }
   }
 
@@ -720,6 +720,17 @@ function scrollToToday(){
   const sc = document.querySelector('.scroll');
   const th = document.querySelector(`th.day[data-date="${todayStr()}"]`);
   if (sc && th) sc.scrollLeft = Math.max(0, th.offsetLeft - 140);
+}
+
+// 套用假別篩選後，橫向捲到「第一個人第一筆該假別」那一格（全年模式下記錄可能在很遠的月份）
+function scrollToFirstMatch(){
+  if (!typeFilter) return;
+  const sc = document.querySelector('.scroll');
+  const firstRow = document.querySelector('#table tr.emprow');
+  if (!sc || !firstRow) return;
+  const chip = firstRow.querySelector('td.day .chip'); // 已套篩選，畫面上的色塊都是該假別
+  const td = chip ? chip.closest('td.day') : null;
+  if (td) sc.scrollLeft = Math.max(0, td.offsetLeft - 140);
 }
 
 // 年/月下拉與目前檢視同步（全年模式隱藏月份）
