@@ -20,7 +20,7 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token, X-Admin-Key, X-Sync-Secret',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token, X-Sync-Secret',
 };
 
 const json = (obj, status = 200) =>
@@ -36,17 +36,13 @@ async function meFromToken(env, t) {
   return env.DB.prepare('SELECT * FROM employees WHERE device_token = ?').bind(t).first();
 }
 
-// 管理權限：X-Admin-Key 相符 OR 本裝置綁定的員工 role=admin 才可。
-// 啟動保險：若系統中尚無任何 admin 且未設 ADMIN_KEY，暫時開放(讓你先指派 admin)。
+// 管理權限：只認「本裝置綁定的員工 role=admin」（已移除 ADMIN_KEY 萬用密鑰後門）。
+// 啟動保險：系統中尚無任何 admin 時暫時開放，讓你能指派第一位管理員。
 async function canAdmin(env, request) {
-  const key = env.ADMIN_KEY;
-  if (key && request.headers.get('X-Admin-Key') === key) return true;
   const me = await meFromToken(env, token(request));
   if (me && me.role === 'admin') return true;
-  if (!key) {
-    const anyAdmin = await env.DB.prepare("SELECT 1 FROM employees WHERE role='admin' LIMIT 1").first();
-    if (!anyAdmin) return true;
-  }
+  const anyAdmin = await env.DB.prepare("SELECT 1 FROM employees WHERE role='admin' LIMIT 1").first();
+  if (!anyAdmin) return true;
   return false;
 }
 

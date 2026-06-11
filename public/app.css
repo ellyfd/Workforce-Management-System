@@ -119,6 +119,21 @@ input[type=color]{ padding:2px; height:38px; width:48px; }
 .tabs button{ flex:1; border:none; background:none; padding:9px; border-radius:8px; font:inherit; cursor:pointer; color:var(--muted); }
 .tabs button.active{ background:#fff; color:var(--ink); font-weight:600; box-shadow:var(--shadow); }
 
+/* 多選下拉（手機用來收合部門篩選，省頁首高度）*/
+.deptdrop{ position:relative; display:inline-block; }
+.deptdrop .deptbtn{ display:inline-flex; align-items:center; gap:6px; }
+.deptdrop .deptbtn .caret{ color:var(--muted); }
+.deptmenu{ position:absolute; top:calc(100% + 4px); left:0; z-index:40;
+  background:#fff; border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.14); padding:6px; min-width:200px;
+  max-height:56vh; overflow:auto; }
+.deptmenu label{ display:flex; align-items:center; gap:8px; padding:9px 10px;
+  border-radius:8px; cursor:pointer; font-size:15px; white-space:nowrap; }
+.deptmenu label:hover{ background:#f3f4f6; }
+.deptmenu label input{ width:16px; height:16px; }
+.deptmenu .foot{ display:flex; gap:8px; justify-content:space-between;
+  border-top:1px solid var(--border); margin-top:4px; padding-top:6px; }
+
 .tag{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:14px; background:#eef2ff; color:var(--indigo); }
 .tag.green{ background:#dcfce7; color:#15803d; }
 .tag.blue{ background:#dbeafe; color:#1d4ed8; }
@@ -154,6 +169,19 @@ table.data tr:last-child td{ border-bottom:none; }
 .modal h3{ margin:0 0 12px; font-size:16px; font-weight:600; }
 .modal .field{ margin-bottom:12px; }
 .modal .actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
+
+/* ── Toast 通知 ───────────────────────────────────── */
+.toast-host{ position:fixed; left:0; right:0; bottom:24px; z-index:120;
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  padding:0 16px; pointer-events:none; }
+.toast{ pointer-events:auto; max-width:90%; background:#1f2937; color:#fff;
+  border-radius:10px; padding:10px 16px; font-size:14px; line-height:1.4;
+  box-shadow:0 8px 24px rgba(0,0,0,.22); transition:opacity .25s, transform .25s;
+  animation:toastin .2s ease; }
+.toast.ok{ background:var(--green); }
+.toast.err{ background:var(--red); }
+@keyframes toastin{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+@media (max-width:820px){ .toast-host{ bottom:calc(var(--bottomnav-h) + 16px + env(safe-area-inset-bottom, 0px)); } }
 
 /* ── 身分閘門（一進站綁定）────────────────────────── */
 .bindgate{ position:fixed; inset:0; z-index:200; background:var(--bg);

@@ -3,6 +3,7 @@
   const params = new URLSearchParams(location.search);
   const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
   const DEVICE = localStorage.getItem('dev_device_token') || '';
+  try { localStorage.removeItem('dev_admin_key'); } catch (_) {} // 移除舊版殘留的 ADMIN_KEY（已不再使用）
 
   // /api/me 的 sessionStorage 快取：換頁先用快取畫側欄、背景再驗證，
   // 讓導覽不必每頁都等一趟網路往返。快取綁定 device token，換 token 即失效。
@@ -53,7 +54,6 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
-  function adminKey() { return localStorage.getItem('dev_admin_key') || ''; }
 
   // 年/月下拉選項（跨年資料瀏覽用）。年度範圍＝今年-3 ～ 今年+1，並保證包含目前選到的年份。
   function yearOptions(sel) {
@@ -70,26 +70,19 @@
     return out;
   }
   function api(path, opts = {}) {
-    const k = adminKey();
     return fetch(API_BASE + path, {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
         ...(DEVICE ? { 'X-Device-Token': DEVICE } : {}),
-        ...(k ? { 'X-Admin-Key': k } : {}),
         ...(opts.headers || {}),
       },
     });
   }
-  async function adminApi(path, opts = {}) {
-    let res = await api(path, opts);
-    if (res.status === 401 && !window.App.isAdmin) {
-      const key = prompt('需要管理權限（管理員帳號或 ADMIN_KEY）：', adminKey());
-      if (key == null) return res;
-      localStorage.setItem('dev_admin_key', key.trim());
-      res = await api(path, opts);
-    }
-    return res;
+  // 管理 API：權限完全由「本裝置綁定的 admin 帳號」決定（不再有 ADMIN_KEY 後門/輸入框）。
+  // 非管理員會收到 401，由各頁顯示「此頁僅限管理員」提示。
+  function adminApi(path, opts = {}) {
+    return api(path, opts);
   }
 
   function navItems(items) {
@@ -318,9 +311,39 @@
     resolveReady({ me, isAdmin });
   }
 
+  // 輕量 toast 通知（取代刺眼的 alert）。type：'ok'｜'err'｜空（中性）
+  function toast(msg, type) {
+    let host = document.querySelector('.toast-host');
+    if (!host) { host = document.createElement('div'); host.className = 'toast-host'; document.body.appendChild(host); }
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' ' + type : '');
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; setTimeout(() => el.remove(), 250); }, 2600);
+  }
+
+  // App 內建確認對話框（取代 window.confirm）。回傳 Promise<boolean>。
+  function confirmDialog(message, opts = {}) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'modal-scrim';
+      wrap.innerHTML = `<div class="modal"><h3>${esc(opts.title || '確認')}</h3>
+        <p style="margin:0 0 16px;white-space:pre-wrap;line-height:1.6;">${esc(message)}</p>
+        <div class="actions">
+          <button class="btn" id="c_cancel">${esc(opts.cancelText || '取消')}</button>
+          <button class="btn ${opts.danger ? 'danger' : 'primary'}" id="c_ok">${esc(opts.okText || '確定')}</button>
+        </div></div>`;
+      document.body.appendChild(wrap);
+      const done = (v) => { wrap.remove(); resolve(v); };
+      wrap.querySelector('#c_cancel').onclick = () => done(false);
+      wrap.querySelector('#c_ok').onclick = () => done(true);
+      wrap.onclick = (e) => { if (e.target === wrap) done(false); };
+    });
+  }
+
   let resolveReady;
   window.App = {
-    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, me: null, isAdmin: false,
+    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, toast, confirm: confirmDialog, me: null, isAdmin: false,
     // 頁面可 await App.ready 取得身分（殼畫好後 resolve；未綁定時 me 為 null）
     ready: new Promise((r) => { resolveReady = r; }),
   };

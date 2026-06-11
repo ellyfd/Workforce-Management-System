@@ -14,6 +14,28 @@
   .selbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:8px 10px; margin-bottom:10px; }
   .filterbox{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
   input[type=file]{ display:none; }
+  /* 姓名：中文在上、英文在下（垂直堆疊）*/
+  .nmcell{ display:flex; flex-direction:column; line-height:1.25; }
+  .nmcell .en{ color:var(--muted); font-size:13px; }
+  /* 部門拖曳排序 */
+  .ord{ white-space:nowrap; }
+  .ord .grip{ cursor:grab; color:var(--muted); user-select:none; touch-action:none; font-size:16px; margin-right:6px; }
+  .ord .ordn{ color:var(--muted); font-variant-numeric:tabular-nums; }
+  .deptrow.dragging{ opacity:.55; background:#eff6ff; }
+  /* 操作改用圖示（✏️ 編輯、🗑️ 刪除）*/
+  .acts{ white-space:nowrap; text-align:right; }
+  .acts .iconbtn{ font-size:18px; line-height:1; }
+  .acts .iconbtn.del:hover{ background:#fee2e2; }
+  .short{ display:none; }
+  @media (max-width:560px){
+    .full{ display:none; } .short{ display:inline; }
+    /* 標題列＋工具列維持單行，不折行 */
+    .emphead{ flex-wrap:nowrap; gap:8px; }
+    .emphead > b{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .emphead .tools{ flex-wrap:nowrap; gap:6px; flex:none; }
+    .emphead .tools .btn{ padding:6px 10px; }
+    table.data th, table.data td{ padding:8px 8px; }
+  }
 </style>
 </head>
 <body class="has-shell">
@@ -33,6 +55,32 @@ const { esc } = App;
 let depts = [], emps = [], tab = 'emp';
 let deptFilter = new Set();   // 員工列表的部門篩選
 let selected = new Set();      // 勾選的員工 id（批次用）
+let empSearch = '';            // 員工搜尋關鍵字（中/英文名）
+
+// 部門篩選：桌機行內多選；手機收合為下拉
+let deptMenuOpen = false;
+const deptMobile = window.matchMedia('(max-width: 560px)');
+deptMobile.addEventListener('change', ()=>{ deptMenuOpen = false; if (tab==='emp') renderEmp(); });
+document.addEventListener('click', (e)=>{
+  if (!deptMenuOpen) return;
+  if (e.target.closest && e.target.closest('#empDeptDrop')) return;
+  deptMenuOpen = false;
+  const m = document.getElementById('empDeptMenu'); if (m) m.hidden = true;
+});
+function empDeptFilterHTML(){
+  const boxes = depts.map(d=>`<label><input type="checkbox" class="df" value="${esc(d.id)}" ${deptFilter.has(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
+  if (deptMobile.matches){
+    const n = deptFilter.size;
+    const lab = n===0 ? '全部部門' : (n<=2 ? [...deptFilter].map(deptName).filter(Boolean).join('、') : `已選 ${n} 個`);
+    return `<div class="filterbox"><span class="muted">篩選：</span>`
+      + `<div class="deptdrop" id="empDeptDrop">`
+      + `<button class="btn sm deptbtn" id="empDeptBtn">${esc(lab)} <span class="caret">▾</span></button>`
+      + `<div class="deptmenu" id="empDeptMenu"${deptMenuOpen?'':' hidden'}>${boxes||'<span class="muted">無部門</span>'}`
+      + `<div class="foot"><button class="btn sm" id="empDfClear">清除</button><button class="btn sm primary" id="empDfClose">完成</button></div>`
+      + `</div></div></div>`;
+  }
+  return `<div class="filterbox"><span class="muted">篩選部門：</span><div class="checks">${boxes||'<span class="muted">無部門</span>'}</div></div>`;
+}
 const STATUS = { active:'在職', parental_leave:'育嬰假', inactive:'離職', hidden:'隱藏' };
 const STATUS_CLS = { active:'green', parental_leave:'blue', inactive:'gray', hidden:'amber' };
 
@@ -44,7 +92,7 @@ function nameOf(id){ const e=empById(id); return e?e.name:''; }
 
 async function loadAll(){
   const [rd, re] = await Promise.all([ App.adminApi('/api/admin/departments'), App.adminApi('/api/admin/employees') ]);
-  if (rd.status===401 || re.status===401){ document.getElementById('panel').innerHTML = '<div class="status err">需要管理密鑰才能使用此頁。</div>'; return; }
+  if (rd.status===401 || re.status===401){ document.getElementById('panel').innerHTML = '<div class="status err">此頁僅限管理員。請在「我的排休 → 切換身分」綁定為管理員帳號。</div>'; return; }
   depts = rd.ok ? await rd.json() : [];
   emps = re.ok ? await re.json() : [];
   render();
@@ -53,60 +101,81 @@ function render(){ tab==='emp' ? renderEmp() : renderDept(); }
 
 /* ── 員工管理 ── */
 function visibleEmps(){
-  if (!deptFilter.size) return emps;
-  return emps.filter(e => empDeptIds(e).some(d => deptFilter.has(d)));
+  let arr = emps;
+  if (deptFilter.size) arr = arr.filter(e => empDeptIds(e).some(d => deptFilter.has(d)));
+  const q = empSearch.trim().toLowerCase();
+  if (q) arr = arr.filter(e => (e.name||'').toLowerCase().includes(q) || (e.english_name||'').toLowerCase().includes(q));
+  return arr;
 }
-function renderEmp(){
-  const list = visibleEmps();
-  const filterChips = depts.map(d=>`<label><input type="checkbox" class="df" value="${esc(d.id)}" ${deptFilter.has(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
-  const rows = list.map(e=>{
-    const dep = [e.deputy_1, e.deputy_2].filter(Boolean).map(nameOf).filter(Boolean).join('、');
-    return `<tr>
-      <td><input type="checkbox" class="sel" value="${esc(e.id)}" ${selected.has(e.id)?'checked':''}/></td>
-      <td><b>${esc(e.name)}</b>${e.english_name?` <span class="muted">${esc(e.english_name)}</span>`:''}</td>
-      <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
-      <td>${dep?esc(dep):'<span class="muted">—</span>'}</td>
-      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span>${e.role==='admin'?' <span class="tag blue">管理員</span>':''}</td>
-      <td class="row"><button class="iconbtn" data-edit="${esc(e.id)}">編輯</button><button class="iconbtn" data-del="${esc(e.id)}">刪除</button></td>
-    </tr>`;
-  }).join('');
-  const selBar = selected.size ? `<div class="selbar">
+function selBarHTML(){
+  return selected.size ? `<div class="selbar">
       <b>已選 ${selected.size} 人</b>
       <button class="btn sm" id="bulkEdit">批次編輯</button>
       <button class="btn sm danger" id="bulkDel">批次刪除</button>
       <button class="btn sm" id="selClear">清除選取</button>
     </div>` : '';
+}
+// 只重畫清單（計數／批次列／表格），搜尋框與篩選保留在外層，打字不失焦
+function paintEmpList(){
+  const list = visibleEmps();
+  document.getElementById('empCount').textContent = list.length;
+  document.getElementById('selBar').innerHTML = selBarHTML();
+  const rows = list.map(e=>{
+    const dep = [e.deputy_1, e.deputy_2].filter(Boolean).map(nameOf).filter(Boolean).join('、');
+    return `<tr>
+      <td><input type="checkbox" class="sel" value="${esc(e.id)}" ${selected.has(e.id)?'checked':''}/></td>
+      <td><div class="nmcell"><b>${esc(e.name)}</b>${e.english_name?`<small class="en">${esc(e.english_name)}</small>`:''}</div></td>
+      <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
+      <td>${dep?esc(dep):'<span class="muted">—</span>'}</td>
+      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span>${e.role==='admin'?' <span class="tag blue">管理員</span>':''}</td>
+      <td class="acts"><button class="iconbtn" data-edit="${esc(e.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-del="${esc(e.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('empBody').innerHTML = `<table class="data">
+      <thead><tr><th></th><th>姓名</th><th>部門</th><th>職代</th><th>狀態</th><th></th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="6" class="empty">${empSearch||deptFilter.size?'查無符合條件的員工':'無員工'}</td></tr>`}</tbody>
+    </table>`;
+  document.querySelectorAll('.sel').forEach(c=>c.onchange=()=>{ c.checked?selected.add(c.value):selected.delete(c.value); paintEmpList(); });
+  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(empById(b.dataset.edit)));
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delEmp(b.dataset.del));
+  if (selected.size){
+    document.getElementById('selClear').onclick = ()=>{ selected.clear(); paintEmpList(); };
+    document.getElementById('bulkEdit').onclick = bulkEditForm;
+    document.getElementById('bulkDel').onclick = bulkDelete;
+  }
+}
+function renderEmp(){
   document.getElementById('panel').innerHTML = `
     <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
-        <b>員工列表 <span class="muted">（${list.length}）</span></b>
-        <div class="row">
-          <button class="btn sm" id="tpl">下載模板</button>
-          <button class="btn sm" id="imp">CSV 匯入</button>
+      <div class="row emphead" style="justify-content:space-between;margin-bottom:10px;">
+        <b>員工列表 <span class="muted">（<span id="empCount"></span>）</span></b>
+        <div class="row tools">
+          <button class="btn sm" id="tpl"><span class="full">下載模板</span><span class="short">模板</span></button>
+          <button class="btn sm" id="imp"><span class="full">CSV 匯入</span><span class="short">匯入</span></button>
           <input type="file" id="impFile" accept=".csv,text/csv" />
-          <button class="btn primary" id="add">＋ 新增員工</button>
+          <button class="btn primary" id="add"><span class="full">＋ 新增員工</span><span class="short">＋</span></button>
         </div>
       </div>
-      <div class="filterbox"><span class="muted">篩選部門：</span><div class="checks">${filterChips||'<span class="muted">無部門</span>'}</div></div>
-      ${selBar}
-      <div class="table-wrap"><table class="data">
-        <thead><tr><th></th><th>姓名</th><th>部門</th><th>職代</th><th>狀態</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="6" class="empty">無員工</td></tr>'}</tbody>
-      </table></div>
+      <div class="filterbox"><input id="empSearch" type="search" placeholder="🔍 搜尋中文 / 英文名…" value="${esc(empSearch)}" style="flex:1;min-width:0;" /></div>
+      ${empDeptFilterHTML()}
+      <div id="selBar"></div>
+      <div id="empBody" class="table-wrap"></div>
     </div>`;
   document.getElementById('add').onclick = ()=>empForm();
   document.getElementById('tpl').onclick = downloadTemplate;
   document.getElementById('imp').onclick = ()=>document.getElementById('impFile').click();
   document.getElementById('impFile').onchange = (ev)=>{ if(ev.target.files[0]) importCSV(ev.target.files[0]); };
-  document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?deptFilter.add(c.value):deptFilter.delete(c.value); renderEmp(); });
-  document.querySelectorAll('.sel').forEach(c=>c.onchange=()=>{ c.checked?selected.add(c.value):selected.delete(c.value); renderEmp(); });
-  document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(empById(b.dataset.edit)));
-  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delEmp(b.dataset.del));
-  if (selected.size){
-    document.getElementById('selClear').onclick = ()=>{ selected.clear(); renderEmp(); };
-    document.getElementById('bulkEdit').onclick = bulkEditForm;
-    document.getElementById('bulkDel').onclick = bulkDelete;
+  const si = document.getElementById('empSearch');
+  si.oninput = ()=>{ empSearch = si.value; paintEmpList(); };
+  const eBtn = document.getElementById('empDeptBtn');
+  if (eBtn){
+    const eMenu = document.getElementById('empDeptMenu');
+    eBtn.onclick = (ev)=>{ ev.stopPropagation(); deptMenuOpen = !deptMenuOpen; eMenu.hidden = !deptMenuOpen; };
+    const eClose = document.getElementById('empDfClose'); if (eClose) eClose.onclick = ()=>{ deptMenuOpen=false; eMenu.hidden=true; };
   }
+  document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?deptFilter.add(c.value):deptFilter.delete(c.value); if (deptMobile.matches) deptMenuOpen = true; renderEmp(); });
+  const eClear = document.getElementById('empDfClear'); if (eClear) eClear.onclick = ()=>{ deptFilter.clear(); if (deptMobile.matches) deptMenuOpen = true; renderEmp(); };
+  paintEmpList();
 }
 
 function deputyOptions(selfId, deptIds, current, excludeId){
@@ -132,7 +201,7 @@ function empForm(e){
     <div class="muted" style="font-size:14px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。管理員才能進設定管理與編輯排休。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
-    if (!name){ alert('請輸入姓名'); return false; }
+    if (!name){ App.toast('請輸入姓名','err'); return false; }
     const department_ids = [...document.querySelectorAll('#f_depts .dc:checked')].map(i=>i.value);
     const body = {
       name, english_name: document.getElementById('f_en').value.trim(),
@@ -144,7 +213,8 @@ function empForm(e){
     };
     const res = e ? await App.adminApi(`/api/admin/employees/${e.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify(body)});
-    if (!res.ok){ alert('儲存失敗'); return false; }
+    if (!res.ok){ App.toast('儲存失敗','err'); return false; }
+    App.toast(e?'已更新員工':'已新增員工','ok');
     await loadAll(); return true;
   });
   // 職代下拉：依勾選部門連動
@@ -164,9 +234,10 @@ function empForm(e){
 
 async function delEmp(id){
   const e = empById(id);
-  if (!confirm(`確定刪除「${e?e.name:''}」？其休假紀錄與職代參照都會清理。`)) return;
+  if (!await App.confirm(`確定刪除「${e?e.name:''}」？其休假紀錄與職代參照都會清理。`, { title:'刪除員工', okText:'刪除', danger:true })) return;
   const res = await App.adminApi(`/api/admin/employees/${id}`,{method:'DELETE'});
-  if (!res.ok){ alert('刪除失敗'); return; }
+  if (!res.ok){ App.toast('刪除失敗','err'); return; }
+  App.toast('已刪除','ok');
   selected.delete(id); loadAll();
 }
 
@@ -182,16 +253,18 @@ function bulkEditForm(){
     const body = { ids:[...selected] };
     if (document.getElementById('b_setdept').checked) body.department_ids = [...document.querySelectorAll('.modal .bc:checked')].map(i=>i.value);
     const st = document.getElementById('b_status').value; if (st) body.status = st;
-    if (body.department_ids===undefined && !body.status){ alert('沒有要更改的項目'); return false; }
+    if (body.department_ids===undefined && !body.status){ App.toast('沒有要更改的項目','err'); return false; }
     const res = await App.adminApi('/api/admin/employees/bulk',{method:'POST',body:JSON.stringify(body)});
-    if (!res.ok){ alert('批次更新失敗'); return false; }
+    if (!res.ok){ App.toast('批次更新失敗','err'); return false; }
+    App.toast('已批次更新','ok');
     selected.clear(); await loadAll(); return true;
   });
 }
 async function bulkDelete(){
-  if (!confirm(`確定刪除選取的 ${selected.size} 人？休假紀錄與職代參照都會清理。`)) return;
+  if (!await App.confirm(`確定刪除選取的 ${selected.size} 人？休假紀錄與職代參照都會清理。`, { title:'批次刪除', okText:'刪除', danger:true })) return;
   const res = await App.adminApi('/api/admin/employees/delete',{method:'POST',body:JSON.stringify({ids:[...selected]})});
-  if (!res.ok){ alert('批次刪除失敗'); return; }
+  if (!res.ok){ App.toast('批次刪除失敗','err'); return; }
+  App.toast('已刪除','ok');
   selected.clear(); loadAll();
 }
 
@@ -204,11 +277,11 @@ function downloadTemplate(){
 }
 async function importCSV(file){
   const text = (await file.text()).replace(/^﻿/, '').trim();
-  if (!text){ alert('檔案是空的'); return; }
+  if (!text){ App.toast('檔案是空的','err'); return; }
   const lines = text.split(/\r?\n/);
   const header = lines[0].split(',').map(s=>s.trim().replace(/^﻿/, ''));
   const ni = header.indexOf('name'), ei = header.indexOf('english_name'), di = header.indexOf('department_name');
-  if (ni < 0){ alert('CSV 需要有 name 欄位'); return; }
+  if (ni < 0){ App.toast('CSV 需要有 name 欄位','err'); return; }
   let ok = 0, skip = 0;
   for (const line of lines.slice(1)){
     const cols = line.split(',');
@@ -220,65 +293,100 @@ async function importCSV(file){
     })});
     r.ok ? ok++ : skip++;
   }
-  alert(`匯入完成：成功 ${ok} 筆${skip?`，失敗 ${skip} 筆`:''}。`);
+  App.toast(`匯入完成：成功 ${ok} 筆${skip?`，失敗 ${skip} 筆`:''}`, skip?'err':'ok');
   loadAll();
 }
 
 /* ── 部門管理 ── */
-const deptSortTimers = {};
 function renderDept(){
-  const rows = depts.map(d=>`
-    <tr>
-      <td><input class="num" type="number" value="${d.sort_order??0}" data-sort="${esc(d.id)}" /></td>
+  const rows = depts.map((d,i)=>`
+    <tr class="deptrow" data-id="${esc(d.id)}">
+      <td class="ord"><span class="grip" title="拖曳調整順序">⋮⋮</span><span class="ordn">${i+1}</span></td>
       <td><b>${esc(d.name)}</b></td>
       <td><span class="tag blue">${d.member_count??0} 人</span></td>
-      <td class="row"><button class="iconbtn" data-dedit="${esc(d.id)}">編輯</button><button class="iconbtn" data-ddel="${esc(d.id)}">刪除</button></td>
+      <td class="acts"><button class="iconbtn" data-dedit="${esc(d.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-ddel="${esc(d.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
     <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+      <div class="row emphead" style="justify-content:space-between;margin-bottom:10px;">
         <b>部門列表 <span class="muted">（${depts.length}）</span></b>
-        <button class="btn primary" id="addD">＋ 新增部門</button>
+        <button class="btn primary" id="addD"><span class="full">＋ 新增部門</span><span class="short">＋</span></button>
       </div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>排序</th><th>部門名稱</th><th>員工人數</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="4" class="empty">尚無部門</td></tr>'}</tbody>
+        <thead><tr><th>順序</th><th>部門名稱</th><th>員工人數</th><th></th></tr></thead>
+        <tbody id="deptBody">${rows||'<tr><td colspan="4" class="empty">尚無部門</td></tr>'}</tbody>
       </table></div>
-      <div class="muted" style="font-size:14px;margin-top:8px;">排序欄可直接修改，停止輸入 0.5 秒後自動儲存。</div>
+      <div class="muted" style="font-size:14px;margin-top:8px;">拖曳左側握把 ⋮⋮ 即可調整部門順序，放開後自動儲存。</div>
     </div>`;
   document.getElementById('addD').onclick = ()=>deptForm();
   document.querySelectorAll('[data-dedit]').forEach(b=>b.onclick=()=>deptForm(depts.find(x=>x.id===b.dataset.dedit)));
   document.querySelectorAll('[data-ddel]').forEach(b=>b.onclick=()=>delDept(b.dataset.ddel));
-  // 排序即時存（每部門 debounce 500ms）
-  document.querySelectorAll('[data-sort]').forEach(inp=>inp.oninput=()=>{
-    const id = inp.dataset.sort;
-    clearTimeout(deptSortTimers[id]);
-    deptSortTimers[id] = setTimeout(async ()=>{
-      await App.adminApi(`/api/admin/departments/${id}`,{method:'PUT',body:JSON.stringify({sort_order:Number(inp.value)||0})});
-      const dd = depts.find(x=>x.id===id); if (dd) dd.sort_order = Number(inp.value)||0;
-    }, 500);
+  attachDeptDrag();
+}
+
+// 拖曳排序（pointer 事件，滑鼠與觸控通用）：放開後依新順序重設 sort_order
+function attachDeptDrag(){
+  const tbody = document.getElementById('deptBody');
+  if (!tbody) return;
+  const rowsOf = ()=>[...tbody.querySelectorAll('tr.deptrow')];
+  tbody.querySelectorAll('.grip').forEach(grip=>{
+    grip.onpointerdown = (e)=>{
+      e.preventDefault();
+      const tr = grip.closest('tr.deptrow');
+      tr.classList.add('dragging');
+      const move = (ev)=>{
+        const y = ev.clientY;
+        for (const r of rowsOf()){
+          if (r===tr) continue;
+          const rect = r.getBoundingClientRect();
+          if (y >= rect.top && y <= rect.bottom){
+            tbody.insertBefore(tr, (y > rect.top + rect.height/2) ? r.nextSibling : r);
+            break;
+          }
+        }
+      };
+      const up = async ()=>{
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        tr.classList.remove('dragging');
+        const ids = rowsOf().map(r=>r.dataset.id);
+        if (ids.join(',') !== depts.map(d=>d.id).join(',')) await persistDeptOrder(ids);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    };
   });
 }
+async function persistDeptOrder(ids){
+  const byId = Object.fromEntries(depts.map(d=>[d.id,d]));
+  depts = ids.map((id,i)=>{ const d = byId[id]; d.sort_order = (i+1)*10; return d; });
+  renderDept(); // 立即反映新順序與編號
+  const res = await Promise.all(depts.map(d=>App.adminApi(`/api/admin/departments/${d.id}`,{method:'PUT',body:JSON.stringify({sort_order:d.sort_order})})));
+  if (res.every(r=>r.ok)) App.toast('部門順序已更新','ok');
+  else { App.toast('部分順序儲存失敗','err'); loadAll(); }
+}
 function deptForm(d){
-  const cur = d || { name:'', sort_order:(depts.length+1) };
+  const cur = d || { name:'', sort_order:(depts.length+1)*10 };
   modal(`${d?'編輯':'新增'}部門`, `
     <div class="field"><label>部門名稱</label><input id="d_name" value="${esc(cur.name)}" /></div>
-    <div class="field"><label>排序（小的在前）</label><input id="d_sort" type="number" value="${cur.sort_order??0}" /></div>
+    <div class="muted" style="font-size:14px;">新增後可在列表用拖曳調整順序。</div>
   `, async ()=>{
     const name = document.getElementById('d_name').value.trim();
-    if (!name){ alert('請輸入名稱'); return false; }
-    const body = { name, sort_order: Number(document.getElementById('d_sort').value)||0 };
+    if (!name){ App.toast('請輸入名稱','err'); return false; }
+    const body = { name, sort_order: cur.sort_order??0 };
     const res = d ? await App.adminApi(`/api/admin/departments/${d.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/departments',{method:'POST',body:JSON.stringify(body)});
-    if (!res.ok){ alert('儲存失敗'); return false; }
+    if (!res.ok){ App.toast('儲存失敗','err'); return false; }
+    App.toast(d?'已更新部門':'已新增部門','ok');
     await loadAll(); return true;
   });
 }
 async function delDept(id){
   const d = depts.find(x=>x.id===id);
-  if (!confirm(`確定刪除部門「${d?d.name:''}」？（員工不會被刪，但會失去此部門歸屬）`)) return;
+  if (!await App.confirm(`確定刪除部門「${d?d.name:''}」？（員工不會被刪，但會失去此部門歸屬）`, { title:'刪除部門', okText:'刪除', danger:true })) return;
   const res = await App.adminApi(`/api/admin/departments/${id}`,{method:'DELETE'});
-  if (!res.ok){ alert('刪除失敗'); return; }
+  if (!res.ok){ App.toast('刪除失敗','err'); return; }
+  App.toast('已刪除','ok');
   loadAll();
 }
 
