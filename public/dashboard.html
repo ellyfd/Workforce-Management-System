@@ -219,7 +219,7 @@ function render(s){
         ${items.length?`<div class="people">${items.map(pill).join('')}</div>`:''}
       </div>`;
     };
-    listHtml = ds.map(d=>drow(d, list.filter(p=>inDept(p, d.name)))).join('');
+    listHtml = ds.filter(d=>d.on_leave>0).map(d=>drow(d, list.filter(p=>inDept(p, d.name)))).join('');
     // 不屬於任何已列部門的人，收在「未分部門」列
     const rest = list.filter(p=>!(p.department||'').split('、').some(n=>knownNames.has(n)));
     if (rest.length){
