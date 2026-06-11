@@ -215,11 +215,11 @@ function render(s){
 }
 
 async function dedupe(){
-  if (!confirm('清理重複的休假記錄(同員工+日期+時段+假別只留一筆)?')) return;
+  if (!(await App.confirm('清理重複的休假記錄（同員工＋日期＋時段＋假別只留一筆）？', { title:'清理重複記錄', okText:'清理' }))) return;
   const r = await App.adminApi('/api/admin/dedupe-leaves', { method:'POST' });
   if (!r.ok){ App.toast('清理失敗（需管理員權限）','err'); return; }
   const d = await r.json();
-  alert(`完成,清掉 ${d.removed||0} 筆重複。`);
+  App.toast(`完成，清掉 ${d.removed||0} 筆重複`,'ok');
   load();
 }
 
