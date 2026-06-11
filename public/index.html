@@ -219,8 +219,6 @@
 const params = new URLSearchParams(location.search);
 // 預設打部署好的 Worker；同源服務時這個絕對網址一樣會通，CORS 已開放。
 const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
-// DPC 過渡資料：排程產生的 public/dpc.json，D1 尚無資料時暫時合併顯示。
-const DPC_URL = params.get('dpc') || './dpc.json';
 
 const WEEKDAY = ['日','一','二','三','四','五','六'];
 const DEFAULT_COLORS = { '休':'#22c55e','差':'#ec4899','午休':'#a855f7','病':'#f97316','員旅':'#9ca3af','早休':'#3b82f6' };
@@ -305,17 +303,6 @@ function colorFor(label, legend){
 }
 
 // 把過渡用的 DPC 區塊合併進 D1 來的資料：
-// 取代同名(3D team（DPC）)部門、補進 DPC 的假別色與國定假日。
-function mergeDpc(base, dpc){
-  if (!dpc) return base;
-  base.legend = { ...(dpc.legend || {}), ...(base.legend || {}) };
-  base.holidays = [...new Set([...(base.holidays || []), ...(dpc.holidays || [])])];
-  const name = dpc.department_name || '3D team（DPC）';
-  base.departments = (base.departments || []).filter(d => d.name !== name);
-  base.departments.push({ name, members: dpc.members || [] });
-  return base;
-}
-
 // 由假別文字判斷是否為半天（早＝上午、午＝下午），決定色塊占滿或只占一半。
 function periodOf(label){
   if (/早/.test(label)) return 'am';
