@@ -547,7 +547,7 @@ async function fillCell(empId, date, type){
   const w = await warnFor(empId, [date], type);
   if (w.length && !confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要請假嗎？')) return;
   const r = await App.adminApi('/api/admin/leaves', { method:'POST', body: JSON.stringify({ employee_id: empId, date, leave_type_id: type, period: periodOfType(type) }) });
-  if (!r.ok){ alert('填入失敗（可能需要管理密鑰）'); return; }
+  if (!r.ok){ alert('填入失敗（需管理員權限）'); return; }
   load();
 }
 async function delByDate(empId, dates, period){
