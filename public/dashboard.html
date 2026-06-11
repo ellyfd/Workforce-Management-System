@@ -26,6 +26,25 @@
   .warn-below{ color:var(--muted); font-size:13px; line-height:1.6; }
   .warn-below .wl{ color:#b45309; }
   .nwk{ display:inline-block; background:#f3f4f6; color:var(--muted); font-size:14px; border-radius:6px; padding:1px 8px; margin-left:8px; }
+  /* 未來 7 天展望：一格一天，點了切換檢視日期 */
+  .owrap{ display:flex; gap:6px; }
+  .owday{ flex:1; min-width:0; position:relative; text-align:center; font:inherit; background:#fff; border:1px solid var(--border); border-radius:8px; padding:6px 2px; cursor:pointer; }
+  .owday:hover{ border-color:var(--blue); }
+  .owday.sel{ border-color:var(--blue); box-shadow:inset 0 0 0 1px var(--blue); }
+  .owday.nonwork{ background:#f8fafc; }
+  .owday .wd{ font-size:12px; color:var(--muted); }
+  .owday .dnum{ font-size:14px; font-weight:600; margin:1px 0; }
+  .owday .cnt{ font-size:12px; color:var(--muted); }
+  .owday .cnt b{ font-size:14px; color:#111827; }
+  .owday .dot{ position:absolute; top:5px; right:6px; width:7px; height:7px; border-radius:50%; background:#dc2626; }
+  /* 部門人力一覽：請假占比條，達 1/3 標紅 */
+  .dstat{ display:flex; align-items:center; gap:10px; padding:7px 2px; }
+  .dstat .dn{ width:110px; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dstat .bar{ flex:1; height:8px; background:#f1f5f9; border-radius:99px; overflow:hidden; }
+  .dstat .bar i{ display:block; height:100%; border-radius:99px; }
+  .dstat .num{ font-size:13px; color:var(--muted); white-space:nowrap; }
+  .dtag{ display:inline-block; margin-left:6px; font-size:11px; color:#dc2626; background:#fef2f2; border:1px solid #fecaca; border-radius:999px; padding:0 6px; vertical-align:1px; }
+  @media (max-width:560px){ .dstat .dn{ width:84px; } .owday .cnt{ font-size:11px; } }
 </style>
 </head>
 <body class="has-shell">
@@ -185,6 +204,43 @@ function render(s){
       <div class="warn-below"><span class="wl">異常請假 ${warns.length} 筆</span>　${warns.map(w=>`${esc(w.name)}（${w.reasons.map(esc).join('、')}）`).join('；')}</div>
     </div>` : '';
 
+  // 未來 7 天展望：第一格＝目前檢視日；紅點＝該日有部門達 1/3 上限；灰底＝非工作日
+  const WD = ['日','一','二','三','四','五','六'];
+  const ow = s.outlook || [];
+  const owHtml = ow.length ? `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+        <b>未來 7 天</b><span class="muted" style="font-size:12px;">點日期切換檢視</span>
+      </div>
+      <div class="owrap">${ow.map((d,i)=>{
+        const dt = new Date(d.date+'T00:00:00');
+        const over = d.over_depts||[];
+        return `<button type="button" class="owday${i===0?' sel':''}${d.non_working?' nonwork':''}" data-d="${esc(d.date)}"
+          title="${over.length?esc(over.join('、')+' 達 1/3 上限'):''}">
+          ${over.length?'<span class="dot"></span>':''}
+          <div class="wd">${WD[dt.getDay()]}</div>
+          <div class="dnum">${dt.getMonth()+1}/${dt.getDate()}</div>
+          <div class="cnt">${d.count?`<b>${d.count}</b> 人`:'—'}</div>
+        </button>`;}).join('')}</div>
+    </div>` : '';
+
+  // 部門人力一覽：請假占在職比例條。達 1/3 紅、差 1 人到上限黃，其餘灰。
+  const ds = s.dept_stats || [];
+  const deptHtml = ds.length ? `
+    <div class="card" style="margin-bottom:12px;">
+      <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+        <b>部門人力</b><span class="muted" style="font-size:12px;">請假達在職 1/3 標紅</span>
+      </div>
+      ${ds.map(d=>{
+        const pct = d.active ? Math.min(100, Math.round(d.on_leave/d.active*100)) : 0;
+        const color = d.over ? '#dc2626' : (d.limit>0 && d.on_leave===d.limit-1 ? '#f59e0b' : '#94a3b8');
+        return `<div class="dstat">
+          <div class="dn">${esc(d.name)}${d.over?'<span class="dtag">達 1/3</span>':''}</div>
+          <div class="bar"><i style="width:${pct}%;background:${color};"></i></div>
+          <div class="num">請假 ${d.on_leave}／${d.active} 人</div>
+        </div>`;}).join('')}
+    </div>` : '';
+
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
       <div class="card kpi"><div class="label">應到人數</div><div class="val">${s.expected}${s.is_non_working?'<span class="nwk">非工作日</span>':''}</div></div>
@@ -192,6 +248,8 @@ function render(s){
       <div class="card kpi"><div class="label">請假人數</div><div class="val">${s.on_leave_count}</div></div>
       <div class="card kpi"><div class="label">假別分佈</div>${typeChips}</div>
     </div>
+    ${owHtml}
+    ${deptHtml}
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
         <div class="row" style="gap:8px;">
@@ -207,6 +265,8 @@ function render(s){
       ${listHtml}
     </div>
     ${warnBelow}`;
+
+  document.querySelectorAll('.owday').forEach(b=>b.onclick = ()=>{ cur = new Date(b.dataset.d+'T00:00:00'); load(); });
 
   const gs = document.getElementById('groupSel');
   if (gs){ gs.value = groupMode; gs.onchange = ()=>{ groupMode = gs.value; localStorage.setItem('dash_group', groupMode); render(s); }; }
