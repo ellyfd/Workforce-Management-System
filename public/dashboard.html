@@ -37,15 +37,21 @@
   .owday .cnt{ font-size:12px; color:var(--muted); }
   .owday .cnt b{ font-size:14px; color:#111827; }
   .owday .dot{ position:absolute; top:5px; right:6px; width:7px; height:7px; border-radius:50%; background:#dc2626; }
-  /* 部門人力一覽：請假占比條，達 1/3 標紅 */
-  .dstat{ display:flex; align-items:center; gap:10px; padding:7px 2px; }
-  .dstat .dn{ width:110px; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* 部門人力條狀圖：每部門一列（名稱/占比條/請假數），底下接休假者膠囊與警示 */
+  .drow{ padding:8px 0 7px; border-bottom:1px solid var(--border); }
+  .drow:last-child{ border-bottom:none; }
+  .dstat{ display:flex; align-items:center; gap:10px; padding:2px; }
+  .dstat .dn{ width:110px; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .dstat .bar{ flex:1; height:8px; background:#f1f5f9; border-radius:99px; overflow:hidden; }
   .dstat .bar i{ display:block; height:100%; border-radius:99px; }
   .dstat .num{ font-size:13px; color:var(--muted); white-space:nowrap; }
-  .lghead.dstat{ padding:6px 8px; margin:8px 0 2px; }
-  .dtag{ display:inline-block; margin-left:6px; font-size:11px; color:#dc2626; background:#fef2f2; border:1px solid #fecaca; border-radius:999px; padding:0 6px; vertical-align:1px; }
-  @media (max-width:560px){ .dstat .dn{ width:84px; } .owday .cnt{ font-size:11px; } }
+  .dtag{ display:inline-block; margin-left:6px; font-size:11px; font-weight:600; color:#dc2626; background:#fef2f2; border:1px solid #fecaca; border-radius:999px; padding:0 6px; vertical-align:1px; }
+  .people{ display:flex; flex-wrap:wrap; gap:6px; margin:7px 0 1px 2px; }
+  .ppill{ display:inline-flex; align-items:center; gap:7px; background:#f8fafc; border:1px solid var(--border); border-radius:999px; padding:3px 5px 3px 11px; font-size:13px; font-weight:600; }
+  .ppill .pe{ color:var(--muted); font-weight:400; font-size:12px; }
+  .ppill .chip{ font-size:11px; padding:1px 8px; border-radius:999px; }
+  .drow .lgwarn{ margin:5px 0 0; padding:0 2px; }
+  @media (max-width:560px){ .dstat .dn{ width:84px; } .owday .cnt{ font-size:11px; } .ppill .pe{ display:none; } }
 </style>
 </head>
 <body class="has-shell">
@@ -194,29 +200,30 @@ function render(s){
 
   let listHtml;
   if (groupMode === 'dept'){
-    // 部門人力 × 休假人員整併：每部門一段，標題列帶請假占比條（達 1/3 紅、差 1 人黃），
-    // 底下接該部門休假名單；沒人請假的部門只留標題列。
+    // 部門人力條狀圖＋人＋警示：每部門一列（部門名／占比條／請假數），
+    // 底下接該部門休假者膠囊與警示行；沒人請假的部門只留條狀列。
     const ds = s.dept_stats || [];
     const inDept = (p, name) => (p.department||'').split('、').includes(name);
     const knownNames = new Set(ds.map(d=>d.name));
-    const head = (d)=>{
+    const pill = (p)=>`<span class="ppill">${esc(p.name)}${p.english_name?` <span class="pe">${esc(p.english_name)}</span>`:''}${chip(p)}</span>`;
+    const drow = (d, items)=>{
       const pct = d.active ? Math.min(100, Math.round(d.on_leave/d.active*100)) : 0;
       const color = d.over ? '#dc2626' : (d.limit>0 && d.on_leave===d.limit-1 ? '#f59e0b' : '#94a3b8');
-      return `<div class="lghead dstat">
-        <div class="dn">${esc(d.name)}${d.over?'<span class="dtag">達 1/3</span>':''}</div>
-        <div class="bar"><i style="width:${pct}%;background:${color};"></i></div>
-        <div class="num">請假 ${d.on_leave}／${d.active} 人</div>
+      return `<div class="drow">
+        <div class="dstat">
+          <div class="dn">${esc(d.name)}${d.over?'<span class="dtag">達 1/3</span>':''}</div>
+          <div class="bar"><i style="width:${pct}%;background:${color};"></i></div>
+          <div class="num">${d.active?`請假 ${d.on_leave}／${d.active} 人`:`請假 ${d.on_leave} 人`}</div>
+        </div>
+        ${warnHead(d.name)}
+        ${items.length?`<div class="people">${items.map(pill).join('')}</div>`:''}
       </div>`;
     };
-    listHtml = ds.map(d=>{
-      const items = list.filter(p=>inDept(p, d.name));
-      return `<div class="lgroup">${head(d)}${warnHead(d.name)}${items.map(p=>item(p,false)).join('')}</div>`;
-    }).join('');
-    // 不屬於任何已列部門的人，收在「未分部門」段
+    listHtml = ds.map(d=>drow(d, list.filter(p=>inDept(p, d.name)))).join('');
+    // 不屬於任何已列部門的人，收在「未分部門」列
     const rest = list.filter(p=>!(p.department||'').split('、').some(n=>knownNames.has(n)));
     if (rest.length){
-      listHtml += `<div class="lgroup"><div class="lghead">未分部門<span class="muted"> ${rest.length}</span></div>
-        ${warnHead('未分部門')}${rest.map(p=>item(p,false)).join('')}</div>`;
+      listHtml += drow({ name:'未分部門', active:0, on_leave:rest.length, limit:0, over:false }, rest);
     }
     if (!list.length) listHtml = '<div class="muted" style="padding:2px 2px 6px;">今日無休假人員</div>' + listHtml;
   } else if (!list.length){
@@ -268,7 +275,7 @@ function render(s){
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
         <div class="row" style="gap:8px;">
-          <b>休假人員 <span class="muted">${list.length} 人</span></b>
+          <b>${groupMode==='dept'?'部門人力':'休假人員'} <span class="muted">今日請假 ${list.length} 人</span></b>
           <select id="groupSel" class="grpsel" title="分組方式">
             <option value="none">不分組</option>
             <option value="dept">依部門</option>
