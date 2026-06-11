@@ -52,6 +52,14 @@
   .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size:14px; color: #374151; }
   .legend .dot { width: 14px; height: 14px; border-radius: 4px; }
   .legend .note { color: var(--muted); font-size:14px; }
+  /* 假別篩選 chip（桌機）：色票，選中填滿 */
+  .tchip{ border:1.5px solid var(--c,#cbd5e1); color:var(--c,#475569); background:#fff; border-radius:999px; padding:4px 11px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2; }
+  .tchip.tall{ --c:#94a3b8; }
+  .tchip:hover{ background:#f8fafc; }
+  .tchip.on{ background:var(--c,#64748b); color:#fff; }
+  /* 管理員專用標記 */
+  .admin-badge{ display:inline-flex; align-items:center; gap:4px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; border-radius:999px; padding:2px 9px; font-size:12px; font-weight:600; }
+  .admin-badge::before{ content:'🔒'; font-size:11px; }
 
   .scroll {
     overflow: auto;
@@ -174,6 +182,7 @@
   </div>
 
   <div class="toolbar admin-only">
+    <span class="admin-badge">管理員專用</span>
     <span class="muted">假別：</span>
     <select id="ltype"><option value="">下拉選單</option></select>
     <button id="rangeBtn">區間</button>
@@ -181,6 +190,7 @@
   </div>
 
   <div class="legend" id="deptbar"><span class="muted">部門：</span></div>
+  <div class="legend" id="typebar"><span class="muted">只看假別：</span></div>
 
   <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
 
@@ -232,6 +242,14 @@ let editingInit = false;
 let fullYear = false;       // 全年模式
 let highlightDate = null;   // 雙擊日期欄高亮整欄
 let DEPTSEL = new Set();    // 部門篩選(空=全部)
+let typeFilter = '';        // 假別篩選：空=全部，否則為該假別 short_name
+// 依假別篩選只保留符合的色塊（其餘格子留白）
+function filterSlots(slots){
+  if (!typeFilter || !slots) return slots;
+  const keep = {};
+  for (const k of ['full','am','pm']) if (slots[k] && slots[k].label === typeFilter) keep[k] = slots[k];
+  return (keep.full || keep.am || keep.pm) ? keep : null;
+}
 let deptMenuOpen = false;   // 手機版部門下拉是否展開
 const deptMobile = window.matchMedia('(max-width: 560px)'); // 手機才把部門篩選收成下拉
 // 跨越手機/桌機斷點時重繪（部門篩選樣式不同）
@@ -392,6 +410,30 @@ function render(data){
   bar.querySelectorAll('.dfilter').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); if (deptMobile.matches) deptMenuOpen = true; render(LAST); });
   const dfc = document.getElementById('dfClear'); if (dfc) dfc.onclick=()=>{ DEPTSEL.clear(); if (deptMobile.matches) deptMenuOpen = true; render(LAST); };
 
+  // 假別篩選（所有人可用）：桌機色票 chip、手機下拉；空＝全部
+  const tbar = document.getElementById('typebar');
+  if (tbar){
+    const ttypes = leaveTypes.length ? leaveTypes
+      : Object.entries(legend).map(([sn,c])=>({ short_name:sn, name:sn, color:c }));
+    if (deptMobile.matches){
+      const opts = '<option value="">全部假別</option>' + ttypes.map(t=>{
+        const v = t.short_name||t.name;
+        return `<option value="${escq(v)}" ${typeFilter===v?'selected':''}>${t.name||t.short_name}</option>`;
+      }).join('');
+      tbar.innerHTML = '<span class="muted">只看假別：</span><select id="tfsel" class="ymsel">'+opts+'</select>';
+      document.getElementById('tfsel').onchange = (e)=>{ typeFilter = e.target.value; render(LAST); };
+    } else {
+      let h = '<span class="muted">只看假別：</span>'
+        + `<button class="tchip tall${typeFilter===''?' on':''}" data-tf="">全部</button>`;
+      h += ttypes.map(t=>{
+        const v = t.short_name||t.name;
+        return `<button class="tchip${typeFilter===v?' on':''}" data-tf="${escq(v)}" style="--c:${t.color||'#64748b'}" title="${escq(t.name||v)}">${t.short_name||t.name}</button>`;
+      }).join('');
+      tbar.innerHTML = h;
+      tbar.querySelectorAll('.tchip').forEach(b=>b.onclick=()=>{ typeFilter = b.dataset.tf; render(LAST); });
+    }
+  }
+
   // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
   HOLIDAYS = holidays;
   EMP = {}; EMP_DEPT = {}; DEPT_MEMBERS = {};
@@ -419,7 +461,7 @@ function render(data){
         const pick = (rangeMode && rangeEmp===m.id && rangeStart===day.date) ? ' picking' : '';
         const cls = `day ${baseCls}${todayCls}${hlCls}${mstart}${pick}`;
         const slots = m.leaves ? m.leaves[day.date] : null;
-        html += cellHTML(slots, cls, empAttr, day.date);
+        html += cellHTML(filterSlots(slots), cls, empAttr, day.date);
       });
       html += '</tr>';
     });
