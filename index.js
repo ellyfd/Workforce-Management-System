@@ -594,8 +594,10 @@ function safeIds(s) {
 function viewerScope(me) {
   if (!me) return new Set();
   if (me.role === 'admin') return null;
+  const managed = safeIds(me.managed_dept_ids);
+  if (me.role === 'manager' && managed.includes('*')) return null; // 主管勾「看全部部門」
   const ids = new Set(safeIds(me.department_ids));
-  if (me.role === 'manager') for (const d of safeIds(me.managed_dept_ids)) ids.add(d);
+  if (me.role === 'manager') for (const d of managed) ids.add(d);
   return ids;
 }
 

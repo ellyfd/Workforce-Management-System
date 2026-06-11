@@ -287,7 +287,9 @@ function empForm(e){
       <div class="field" style="flex:1;"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
       <div class="field" style="flex:1;"><label>角色</label><select id="f_role"><option value="user"${(!cur.role||cur.role==='user')?' selected':''}>一般</option><option value="manager"${cur.role==='manager'?' selected':''}>主管</option><option value="admin"${cur.role==='admin'?' selected':''}>管理員</option></select></div>
     </div>
-    <div class="field" id="f_mgr_wrap" style="display:${cur.role==='manager'?'':'none'};"><label>負責部門（主管的可見範圍）</label><div class="checks" id="f_mdepts">${mchecks||'<span class="muted">尚無部門</span>'}</div></div>
+    <div class="field" id="f_mgr_wrap" style="display:${cur.role==='manager'?'':'none'};"><label>負責部門（主管的可見範圍）</label>
+      <label style="display:flex;gap:8px;align-items:center;margin:2px 0 8px;font-weight:600;cursor:pointer;"><input type="checkbox" id="f_mgr_all" ${managed.includes('*')?'checked':''}/> 看全部部門（含日後新增）</label>
+      <div class="checks" id="f_mdepts">${mchecks||'<span class="muted">尚無部門</span>'}</div></div>
     <div class="muted" style="font-size:14px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。<br>角色：<b>一般</b>只看自己部門；<b>主管</b>另可看「負責部門」；<b>管理員</b>看全部並可編輯排休與進設定。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
@@ -300,7 +302,7 @@ function empForm(e){
       deputy_2: document.getElementById('f_dep2').value || null,
       status: document.getElementById('f_status').value,
       role: document.getElementById('f_role').value,
-      managed_dept_ids: [...document.querySelectorAll('#f_mdepts .mdc:checked')].map(i=>i.value),
+      managed_dept_ids: document.getElementById('f_mgr_all').checked ? ['*'] : [...document.querySelectorAll('#f_mdepts .mdc:checked')].map(i=>i.value),
     };
     const res = e ? await App.adminApi(`/api/admin/employees/${e.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify(body)});
@@ -322,6 +324,10 @@ function empForm(e){
   // 角色切到「主管」才顯示負責部門
   const roleSel = document.getElementById('f_role'), mgrWrap = document.getElementById('f_mgr_wrap');
   roleSel.onchange = ()=>{ mgrWrap.style.display = roleSel.value==='manager' ? '' : 'none'; };
+  // 「看全部部門」勾選時，停用個別部門勾選
+  const mgrAll = document.getElementById('f_mgr_all');
+  const toggleMgrAll = ()=>{ document.querySelectorAll('#f_mdepts .mdc').forEach(c=>c.disabled = mgrAll.checked); document.getElementById('f_mdepts').style.opacity = mgrAll.checked ? '.45' : '1'; };
+  mgrAll.onchange = toggleMgrAll; toggleMgrAll();
   document.querySelectorAll('#f_depts .dc').forEach(c=>c.onchange=refreshDeputies);
   document.getElementById('f_dep1').onchange = refreshDeputies; // 改 deputy_1 → 重算 deputy_2 候選
 }
