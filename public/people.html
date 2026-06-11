@@ -53,7 +53,11 @@
 <script>
 const { esc } = App;
 let depts = [], emps = [], tab = 'emp';
-let deptFilter = new Set();   // 員工列表的部門篩選
+let deptFilter = new Set();   // 部門篩選
+let deputyFilter = new Set(); // 職代篩選（職代員工 id）
+let statusFilter = new Set(); // 狀態篩選
+let loginFilter = 'all';      // 上次登入篩選：all / 7d / 30d / never
+let sortKey = null, sortDir = 1; // 排序欄位與方向（1 升冪 / -1 降冪）
 let selected = new Set();      // 勾選的員工 id（批次用）
 let empSearch = '';            // 員工搜尋關鍵字（中/英文名）
 
@@ -113,12 +117,83 @@ async function loadAll(){
 function render(){ tab==='emp' ? renderEmp() : renderDept(); }
 
 /* ── 員工管理 ── */
+const STATUS_ORDER = ['active','parental_leave','hidden','inactive'];
+function loginMs(e){ return e.last_login ? Date.parse(e.last_login) : 0; }
+function sortVal(e){
+  switch(sortKey){
+    case 'name':   return (e.name||'') || (e.english_name||'');
+    case 'dept':   return empDepts(e)[0]||'';
+    case 'deputy': return [e.deputy_1,e.deputy_2].filter(Boolean).map(nameOf).filter(Boolean).join('、');
+    case 'status': return STATUS_ORDER.indexOf(e.status);
+    case 'login':  return loginMs(e);
+    default: return 0;
+  }
+}
+function anyFilter(){ return !!(empSearch.trim()||deptFilter.size||deputyFilter.size||statusFilter.size||loginFilter!=='all'); }
 function visibleEmps(){
-  let arr = emps;
-  if (deptFilter.size) arr = arr.filter(e => empDeptIds(e).some(d => deptFilter.has(d)));
+  let arr = emps.slice();
   const q = empSearch.trim().toLowerCase();
   if (q) arr = arr.filter(e => (e.name||'').toLowerCase().includes(q) || (e.english_name||'').toLowerCase().includes(q));
+  if (deptFilter.size) arr = arr.filter(e => empDeptIds(e).some(d => deptFilter.has(d)));
+  if (deputyFilter.size) arr = arr.filter(e => deputyFilter.has(e.deputy_1) || deputyFilter.has(e.deputy_2));
+  if (statusFilter.size) arr = arr.filter(e => statusFilter.has(e.status));
+  if (loginFilter==='never') arr = arr.filter(e => !e.last_login);
+  else if (loginFilter==='7d') arr = arr.filter(e => e.last_login && Date.now()-Date.parse(e.last_login) <= 7*86400000);
+  else if (loginFilter==='30d') arr = arr.filter(e => e.last_login && Date.now()-Date.parse(e.last_login) <= 30*86400000);
+  if (sortKey) arr.sort((a,b)=>{ const va=sortVal(a), vb=sortVal(b); const r = (typeof va==='number') ? va-vb : String(va).localeCompare(String(vb),'zh-Hant'); return r*sortDir; });
   return arr;
+}
+
+// 欄位篩選 popover（掛在 body、fixed 定位，避免被表格捲動容器裁切）
+let popEl = null, popOutside = null;
+function closePop(){
+  if (popEl){ popEl.remove(); popEl = null; }
+  if (popOutside){ document.removeEventListener('click', popOutside, true); document.removeEventListener('keydown', popKey, true); window.removeEventListener('scroll', closePop, true); popOutside = null; }
+}
+function popKey(e){ if (e.key==='Escape') closePop(); }
+function openPop(anchor, html, wire){
+  closePop();
+  popEl = document.createElement('div');
+  popEl.className = 'colpop';
+  popEl.innerHTML = html;
+  document.body.appendChild(popEl);
+  const r = anchor.getBoundingClientRect();
+  let left = Math.min(r.left, window.innerWidth - popEl.offsetWidth - 8);
+  popEl.style.left = Math.max(8, left) + 'px';
+  popEl.style.top = (r.bottom + 4) + 'px';
+  wire(popEl);
+  popOutside = (e)=>{ if (popEl && !popEl.contains(e.target) && !anchor.contains(e.target)) closePop(); };
+  setTimeout(()=>{ document.addEventListener('click', popOutside, true); document.addEventListener('keydown', popKey, true); window.addEventListener('scroll', closePop, true); }, 0);
+}
+function distinctDeputies(){
+  const ids = new Set();
+  emps.forEach(e=>{ if (e.deputy_1) ids.add(e.deputy_1); if (e.deputy_2) ids.add(e.deputy_2); });
+  return [...ids].map(id=>({ id, name: nameOf(id) })).filter(x=>x.name).sort((a,b)=>a.name.localeCompare(b.name,'zh-Hant'));
+}
+function openColFilter(key, anchor){
+  let html = '', wire = ()=>{};
+  const foot = '<div class="foot"><button class="btn sm" id="cpClear">清除</button></div>';
+  if (key==='name'){
+    html = `<input type="search" id="cpName" placeholder="搜尋姓名 / 英文名…" value="${esc(empSearch)}"/>${foot}`;
+    wire = (p)=>{ const i=p.querySelector('#cpName'); i.focus(); i.oninput=()=>{ empSearch=i.value; const ss=document.getElementById('empSearch'); if(ss) ss.value=empSearch; paintEmpList(); }; p.querySelector('#cpClear').onclick=()=>{ empSearch=''; const ss=document.getElementById('empSearch'); if(ss) ss.value=''; paintEmpList(); closePop(); }; };
+  } else if (key==='dept'){
+    const boxes = depts.map(d=>`<label><input type="checkbox" class="cf" value="${esc(d.id)}" ${deptFilter.has(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('') || '<span class="muted">無部門</span>';
+    html = boxes + foot;
+    wire = (p)=>{ p.querySelectorAll('.cf').forEach(c=>c.onchange=()=>{ c.checked?deptFilter.add(c.value):deptFilter.delete(c.value); paintEmpList(); }); p.querySelector('#cpClear').onclick=()=>{ deptFilter.clear(); paintEmpList(); closePop(); }; };
+  } else if (key==='deputy'){
+    const boxes = distinctDeputies().map(x=>`<label><input type="checkbox" class="cf" value="${esc(x.id)}" ${deputyFilter.has(x.id)?'checked':''}/> ${esc(x.name)}</label>`).join('') || '<span class="muted">無職代</span>';
+    html = boxes + foot;
+    wire = (p)=>{ p.querySelectorAll('.cf').forEach(c=>c.onchange=()=>{ c.checked?deputyFilter.add(c.value):deputyFilter.delete(c.value); paintEmpList(); }); p.querySelector('#cpClear').onclick=()=>{ deputyFilter.clear(); paintEmpList(); closePop(); }; };
+  } else if (key==='status'){
+    const boxes = Object.entries(STATUS).map(([k,v])=>`<label><input type="checkbox" class="cf" value="${k}" ${statusFilter.has(k)?'checked':''}/> ${v}</label>`).join('');
+    html = boxes + foot;
+    wire = (p)=>{ p.querySelectorAll('.cf').forEach(c=>c.onchange=()=>{ c.checked?statusFilter.add(c.value):statusFilter.delete(c.value); paintEmpList(); }); p.querySelector('#cpClear').onclick=()=>{ statusFilter.clear(); paintEmpList(); closePop(); }; };
+  } else if (key==='login'){
+    html = [['all','全部'],['7d','7 天內'],['30d','30 天內'],['never','從未登入']]
+      .map(([v,l])=>`<label><input type="radio" name="cpLogin" class="cf" value="${v}" ${loginFilter===v?'checked':''}/> ${l}</label>`).join('');
+    wire = (p)=>{ p.querySelectorAll('.cf').forEach(c=>c.onchange=()=>{ loginFilter=c.value; paintEmpList(); }); };
+  }
+  openPop(anchor, html, wire);
 }
 function selBarHTML(){
   return selected.size ? `<div class="selbar">
@@ -145,10 +220,16 @@ function paintEmpList(){
       <td class="acts"><button class="iconbtn" data-edit="${esc(e.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-del="${esc(e.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
     </tr>`;
   }).join('');
+  const arrow = (key)=> sortKey!==key ? '<span class="arr dim">⇅</span>' : `<span class="arr">${sortDir>0?'▲':'▼'}</span>`;
+  const fOn = { name: !!empSearch.trim(), dept: deptFilter.size>0, deputy: deputyFilter.size>0, status: statusFilter.size>0, login: loginFilter!=='all' };
+  const funnel = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>';
+  const th = (key,label)=>`<th class="col"><span class="th-in" data-sort="${key}">${label} ${arrow(key)}</span><button class="fbtn ${fOn[key]?'on':''}" data-filter="${key}" title="篩選">${funnel}</button></th>`;
   document.getElementById('empBody').innerHTML = `<table class="data">
-      <thead><tr><th></th><th>姓名</th><th>部門</th><th>職代</th><th>狀態</th><th>上次登入</th><th></th></tr></thead>
-      <tbody>${rows||`<tr><td colspan="7" class="empty">${empSearch||deptFilter.size?'查無符合條件的員工':'無員工'}</td></tr>`}</tbody>
+      <thead><tr><th></th>${th('name','姓名')}${th('dept','部門')}${th('deputy','職代')}${th('status','狀態')}${th('login','上次登入')}<th></th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="7" class="empty">${anyFilter()?'查無符合條件的員工':'無員工'}</td></tr>`}</tbody>
     </table>`;
+  document.querySelectorAll('[data-sort]').forEach(el=>el.onclick=()=>{ const k=el.dataset.sort; if (sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir=1; } paintEmpList(); });
+  document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=(ev)=>{ ev.stopPropagation(); openColFilter(b.dataset.filter, b); });
   document.querySelectorAll('.sel').forEach(c=>c.onchange=()=>{ c.checked?selected.add(c.value):selected.delete(c.value); paintEmpList(); });
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>empForm(empById(b.dataset.edit)));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delEmp(b.dataset.del));
@@ -171,7 +252,6 @@ function renderEmp(){
         </div>
       </div>
       <div class="filterbox"><input id="empSearch" type="search" placeholder="🔍 搜尋中文 / 英文名…" value="${esc(empSearch)}" style="flex:1;min-width:0;" /></div>
-      ${empDeptFilterHTML()}
       <div id="selBar"></div>
       <div id="empBody" class="table-wrap"></div>
     </div>`;
@@ -181,14 +261,6 @@ function renderEmp(){
   document.getElementById('impFile').onchange = (ev)=>{ if(ev.target.files[0]) importCSV(ev.target.files[0]); };
   const si = document.getElementById('empSearch');
   si.oninput = ()=>{ empSearch = si.value; paintEmpList(); };
-  const eBtn = document.getElementById('empDeptBtn');
-  if (eBtn){
-    const eMenu = document.getElementById('empDeptMenu');
-    eBtn.onclick = (ev)=>{ ev.stopPropagation(); deptMenuOpen = !deptMenuOpen; eMenu.hidden = !deptMenuOpen; };
-    const eClose = document.getElementById('empDfClose'); if (eClose) eClose.onclick = ()=>{ deptMenuOpen=false; eMenu.hidden=true; };
-  }
-  document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?deptFilter.add(c.value):deptFilter.delete(c.value); if (deptMobile.matches) deptMenuOpen = true; renderEmp(); });
-  const eClear = document.getElementById('empDfClear'); if (eClear) eClear.onclick = ()=>{ deptFilter.clear(); if (deptMobile.matches) deptMenuOpen = true; renderEmp(); };
   paintEmpList();
 }
 
