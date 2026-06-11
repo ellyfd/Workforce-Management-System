@@ -79,7 +79,9 @@ const PERIOD = { full:'整天', morning:'上午', afternoon:'下午' };
 let cur = new Date();
 let DEPTSEL = new Set();
 let me = null;
-let groupMode = localStorage.getItem('dash_group') || 'dept'; // 休假人員分組：none / dept / type
+// 休假人員分組：none / dept / type。改用 dash_group2 鍵＝一次性遷移，
+// 讓存過舊偏好（如「不分組」）的使用者也先看到新的「依部門」整併視圖。
+let groupMode = localStorage.getItem('dash_group2') || 'dept';
 
 // 部門篩選：桌機行內多選；手機收合為下拉
 let DEPTS = [];
@@ -295,7 +297,7 @@ function render(s){
   });
 
   const gs = document.getElementById('groupSel');
-  if (gs){ gs.value = groupMode; gs.onchange = ()=>{ groupMode = gs.value; localStorage.setItem('dash_group', groupMode); render(s); }; }
+  if (gs){ gs.value = groupMode; gs.onchange = ()=>{ groupMode = gs.value; localStorage.setItem('dash_group2', groupMode); render(s); }; }
 
   const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
 }
