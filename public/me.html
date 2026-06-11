@@ -314,8 +314,9 @@ const TOUR_KEY = 'dev_me_tour_done';
 function startTour(){
   const steps = [
     { sel:'#brushRow', title:'① 選假別', body:'先點一個假別當「筆刷」（電腦是色塊、手機是下拉選單）。' },
-    { sel:'.cal', title:'② 點日期填入', body:'點日曆上的日期，就會填入剛剛選的假別。想一次填一整段，先按「區間」再點起訖兩天。' },
-    { sel:'.cal', title:'取消請假', body:'雙擊已填入的格子，確認後即可取消。隨時可在右上「切換身分」更換帳號。' },
+    { sel:'.cal', title:'② 點日期填入', body:'點日曆上的日期，就會填入剛剛選的假別。' },
+    { sel:'#rangeBtn', title:'區間請假', body:'想一次填一整段，先按「區間」再點起訖兩天。' },
+    { sel:'.cal', title:'取消請假', body:'雙擊已填入的格子，確認後即可取消。' },
   ];
   if (document.querySelector('.tour-mask')) return; // 避免重複開啟
   let i = 0;
