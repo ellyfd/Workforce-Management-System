@@ -41,6 +41,7 @@
   }
   .toolbar button:hover { background: #f3f4f6; }
   .toolbar .month-label { font-weight: 600; min-width: 110px; text-align: center; }
+  .toolbar select.ymsel { font: inherit; font-weight: 600; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: #fff; padding: 6px 8px; }
   .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
@@ -153,7 +154,8 @@
 
   <div class="toolbar">
     <button id="prev">‹</button>
-    <span class="month-label" id="monthLabel"></span>
+    <select id="selYear" class="ymsel" title="選擇年度"></select>
+    <select id="selMonth" class="ymsel" title="選擇月份"></select>
     <button id="next">›</button>
     <button class="today-btn" id="todayBtn">今天</button>
     <button id="yearBtn">全年</button>
@@ -324,7 +326,7 @@ function render(data){
 
   document.getElementById('title').textContent = '全部排休';
   document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${viewLabel}`;
-  document.getElementById('monthLabel').textContent = viewLabel;
+  syncYmSelects();
 
   // 圖例
   const leg = document.getElementById('legend');
@@ -624,6 +626,16 @@ function scrollToToday(){
   if (sc && th) sc.scrollLeft = Math.max(0, th.offsetLeft - 140);
 }
 
+// 年/月下拉與目前檢視同步（全年模式隱藏月份）
+function syncYmSelects(){
+  document.getElementById('selYear').innerHTML = App.yearOptions(curYear);
+  const sm = document.getElementById('selMonth');
+  sm.innerHTML = App.monthOptions(curMonth);
+  sm.style.display = fullYear ? 'none' : '';
+}
+document.getElementById('selYear').onchange = (e) => { curYear = Number(e.target.value); load().then(scrollToToday); };
+document.getElementById('selMonth').onchange = (e) => { curMonth = Number(e.target.value); load().then(scrollToToday); };
+
 document.getElementById('prev').onclick = () => go(-1);
 document.getElementById('next').onclick = () => go(1);
 document.getElementById('todayBtn').onclick = () => {
@@ -638,6 +650,7 @@ document.getElementById('yearBtn').onclick = () => {
   load().then(scrollToToday);
 };
 
+syncYmSelects(); // 載入完成前先讓下拉有內容
 load().then(scrollToToday);
 </script>
 </body>

@@ -53,7 +53,6 @@
 <script>
 const { esc } = App;
 const PERIOD = { full:'整天', morning:'上午', afternoon:'下午' };
-const DEVICE = localStorage.getItem('dev_device_token') || '';
 let cur = new Date();
 let DEPTSEL = new Set();
 let me = null;
@@ -101,15 +100,14 @@ function renderDeptFilter(){
 }
 
 async function boot(){
-  // 取得本裝置綁定者(打招呼用)
-  try { if (DEVICE){ const r = await fetch(`${App.API_BASE}/api/me`, { headers:{ 'X-Device-Token': DEVICE } }); if (r.ok) me = await r.json(); } } catch(_){}
+  load(); // 當日資料不依賴身分，最先發出
+  // 部門篩選（與儀表板資料並行載入）；桌機行內多選、手機收合為下拉
+  fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'}).then(r=>r.json()).then(ds=>{
+    DEPTS = ds || []; renderDeptFilter();
+  }).catch(()=>{ DEPTS = []; renderDeptFilter(); });
+  // 身分由 app.js 提供（含快取），不再自打 /api/me（打招呼用）
+  me = (await App.ready).me;
   document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
-  // 部門篩選
-  try {
-    DEPTS = await (await fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'})).json();
-  } catch(_){ DEPTS = []; }
-  renderDeptFilter();
-  load();
 }
 
 async function load(){
@@ -160,7 +158,7 @@ function render(s){
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
         <b>休假人員 <span class="muted">${list.length} 人</span></b>
-        ${(me&&me.role==='admin')?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
+        ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
     </div>`;
