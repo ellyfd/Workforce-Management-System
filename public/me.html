@@ -46,6 +46,16 @@
   .hint{ margin:8px 0 2px; font-size:14px; color:#374151; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
   .hint .dot{ width:12px; height:12px; border-radius:4px; display:inline-block; }
   .hint .step{ color:var(--blue); font-weight:600; }
+  /* 第一次登入的互動式教學（聚光燈 + 步驟卡） */
+  .tour-mask{ position:fixed; inset:0; z-index:299; }
+  .tour-spot{ position:fixed; border-radius:10px; box-shadow:0 0 0 9999px rgba(15,23,42,.55); z-index:300; pointer-events:none; transition:left .2s,top .2s,width .2s,height .2s; }
+  .tour-card{ position:fixed; z-index:301; box-sizing:border-box; width:300px; max-width:calc(100vw - 24px); background:#fff; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,.28); padding:16px; font-size:14px; line-height:1.6; color:#374151; }
+  .tour-card h4{ margin:0 0 6px; font-size:15px; color:#111827; }
+  .tour-card .tnav{ display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:8px; }
+  .tour-card .tdots{ display:flex; gap:5px; }
+  .tour-card .tdots i{ width:7px; height:7px; border-radius:50%; background:var(--border); display:inline-block; }
+  .tour-card .tdots i.on{ background:var(--blue); }
+  .tour-card .tbtns{ display:flex; gap:8px; }
 
   /* 手機：縮小日曆格內距與字級，避免色塊溢出格子 */
   @media (max-width:560px){
@@ -128,6 +138,7 @@ async function init(){
     leaveTypes = await pTypes;
     await pLeaves;
     showCalendar();
+    if (!localStorage.getItem(TOUR_KEY)) setTimeout(startTour, 300); // 第一次登入才跑教學
   } catch (e) {
     app.innerHTML = `<div class="status err">連線失敗：${e.message}<br>請確認 API_BASE 設定正確（目前：${API_BASE}）</div>`;
   }
@@ -298,6 +309,58 @@ function setSelType(v){
   const bh = document.getElementById('brushHint'); if (bh) bh.outerHTML = brushHintHtml();
 }
 
+// 第一次登入的互動式教學：聚光燈逐步介紹「① 選假別 → ② 點日期 → 取消」
+const TOUR_KEY = 'dev_me_tour_done';
+function startTour(){
+  const steps = [
+    { sel:'#brushRow', title:'① 選假別', body:'先點一個假別當「筆刷」（電腦是色塊、手機是下拉選單）。' },
+    { sel:'.cal', title:'② 點日期填入', body:'點日曆上的日期，就會填入剛剛選的假別。想一次填一整段，先按「區間」再點起訖兩天。' },
+    { sel:'.cal', title:'取消請假', body:'雙擊已填入的格子，確認後即可取消。隨時可在右上「切換身分」更換帳號。' },
+  ];
+  if (document.querySelector('.tour-mask')) return; // 避免重複開啟
+  let i = 0;
+  const mask = document.createElement('div'); mask.className = 'tour-mask';
+  const spot = document.createElement('div'); spot.className = 'tour-spot';
+  const card = document.createElement('div'); card.className = 'tour-card';
+  document.body.append(mask, spot, card);
+  const cleanup = ()=>{ mask.remove(); spot.remove(); card.remove(); window.removeEventListener('resize', render); window.removeEventListener('scroll', render, true); };
+  const finish = ()=>{ try{ localStorage.setItem(TOUR_KEY,'1'); }catch(_){ } cleanup(); };
+  function render(){
+    const st = steps[i];
+    const el = document.querySelector(st.sel);
+    if (!el){ finish(); return; }
+    const r = el.getBoundingClientRect(), pad = 6;
+    spot.style.left = (r.left-pad)+'px'; spot.style.top = (r.top-pad)+'px';
+    spot.style.width = (r.width+pad*2)+'px'; spot.style.height = (r.height+pad*2)+'px';
+    const last = i === steps.length-1;
+    card.innerHTML = `<h4>${st.title}</h4><div>${st.body}</div>
+      <div class="tnav">
+        <div class="tdots">${steps.map((_,k)=>`<i class="${k===i?'on':''}"></i>`).join('')}</div>
+        <div class="tbtns">
+          <button class="btn sm" data-act="skip">略過</button>
+          ${i>0?'<button class="btn sm" data-act="prev">上一步</button>':''}
+          <button class="btn sm primary" data-act="next">${last?'開始使用':'下一步'}</button>
+        </div>
+      </div>`;
+    const ch = card.offsetHeight, cw = card.offsetWidth;
+    let top = r.bottom + 12;
+    if (top + ch > window.innerHeight - 12) top = Math.max(12, r.top - 12 - ch);
+    let left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12));
+    card.style.top = top+'px'; card.style.left = left+'px';
+    card.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+      const a = b.dataset.act;
+      if (a==='skip') return finish();
+      if (a==='prev'){ i--; render(); return; }
+      if (last) return finish();
+      i++; goto();
+    });
+  }
+  function goto(){ const el = document.querySelector(steps[i].sel); if (el) el.scrollIntoView({ block:'center' }); render(); }
+  goto();
+  window.addEventListener('resize', render);
+  window.addEventListener('scroll', render, true);
+}
+
 function showCalendar(){
   const y = cur.getFullYear(), m = cur.getMonth() + 1;
   const opts = leaveTypes.map(t => `<option value="${t.id}"${t.id===selType?' selected':''}>${t.name}</option>`).join('');
@@ -324,7 +387,7 @@ function showCalendar(){
         <button class="btn sm" id="next">下個月 ›</button>
       </div>
       ${summaryHtml}
-      <div class="row" style="margin:10px 0; gap:8px;">
+      <div class="row" id="brushRow" style="margin:10px 0; gap:8px;">
         <div class="lchips">${chips}</div>
         <select id="ltype" class="lsel"><option value="">選擇假別…</option>${opts}</select>
         <button class="btn ${rangeMode?'primary':''}" id="rangeBtn" title="區間請假">區間</button>
@@ -342,6 +405,7 @@ function showCalendar(){
         </ul>
         <div style="font-weight:600;margin:6px 0;">假別圖例</div>
         <div class="summary">${legend}</div>
+        <button class="btn sm" id="replayTour" style="margin-top:12px;">▶ 重看操作教學</button>
       </details>
     </div>`;
 
@@ -356,6 +420,7 @@ function showCalendar(){
   document.getElementById('selMonth').onchange = ymJump;
   document.getElementById('ltype').onchange = (ev) => setSelType(ev.target.value);
   document.querySelectorAll('.lchip').forEach(c => c.onclick = () => setSelType(c.dataset.t));
+  const rt = document.getElementById('replayTour'); if (rt) rt.onclick = startTour;
   document.getElementById('rangeBtn').onclick = () => { rangeMode = !rangeMode; rangeStart = null; document.getElementById('rangeBtn').classList.toggle('primary', rangeMode); refreshMonth(); };
   attachCellHandlers();
 }
