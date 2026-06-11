@@ -127,17 +127,26 @@ async function boot(){
   document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
 }
 
+let loadSeq = 0; // 防止快速連點時舊回應蓋掉新回應
 async function load(){
   document.getElementById('date').value = ymd(cur);
   const c = document.getElementById('content');
-  c.innerHTML = '<div class="status">載入中…</div>';
+  const seq = ++loadSeq;
+  // 換日期不清空畫面：舊內容降透明度示意載入中，新資料到了一次換上（不閃）
+  if (c.dataset.loaded) c.style.opacity = '.55';
+  else c.innerHTML = '<div class="status">載入中…</div>';
   try {
     const dept = [...DEPTSEL].join(',');
     const r = await fetch(`${App.API_BASE}/api/dashboard?date=${ymd(cur)}${dept?`&dept=${dept}`:''}`, { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    render(await r.json());
+    const data = await r.json();
+    if (seq !== loadSeq) return;
+    render(data);
+    c.dataset.loaded = '1';
   } catch (e) {
-    c.innerHTML = `<div class="status err">讀取失敗：${esc(e.message)}</div>`;
+    if (seq === loadSeq) c.innerHTML = `<div class="status err">讀取失敗：${esc(e.message)}</div>`;
+  } finally {
+    if (seq === loadSeq) c.style.opacity = '';
   }
 }
 
@@ -272,7 +281,11 @@ function render(s){
     </div>
     ${warnBelow}`;
 
-  document.querySelectorAll('.owday').forEach(b=>b.onclick = ()=>{ cur = new Date(b.dataset.d+'T00:00:00'); load(); });
+  document.querySelectorAll('.owday').forEach(b=>b.onclick = ()=>{
+    // 藍框立即跟著點擊移動，不等回應（避免「點了沒反應」的感覺）
+    document.querySelectorAll('.owday').forEach(x=>x.classList.toggle('sel', x===b));
+    cur = new Date(b.dataset.d+'T00:00:00'); load();
+  });
 
   const gs = document.getElementById('groupSel');
   if (gs){ gs.value = groupMode; gs.onchange = ()=>{ groupMode = gs.value; localStorage.setItem('dash_group', groupMode); render(s); }; }
