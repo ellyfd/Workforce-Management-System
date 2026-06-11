@@ -538,8 +538,9 @@ async function buildCalendar(env, year, month) {
   const yearTotals = {};
   for (const r of recs.results) {
     const t = typeById[r.leave_type_id];
-    const slot = r.period === 'morning' ? 'am' : r.period === 'afternoon' ? 'pm' : 'full';
-    const cell = { label: t ? t.short_name || t.name : '休', period: r.period || 'full', color: t ? t.color || '#64748b' : '#64748b' };
+    const np = normPeriod(r.period);
+    const slot = np === 'morning' ? 'am' : np === 'afternoon' ? 'pm' : 'full';
+    const cell = { label: t ? t.short_name || t.name : '休', period: np, color: t ? t.color || '#64748b' : '#64748b' };
     const days = (leavesByEmp[r.employee_id] ||= {});
     (days[r.date] ||= {})[slot] = cell;
     const w = t ? Number(t.day_value) || 0 : 0;
@@ -598,6 +599,15 @@ async function base44(env, entity, q) {
 function periodFromShort(short) {
   if (/早/.test(short || '')) return 'morning';
   if (/午/.test(short || '')) return 'afternoon';
+  return 'full';
+}
+
+// period 正規化：相容 Base44/舊資料可能存成 AM/PM、am/pm 等寫法，
+// 一律收斂成 morning / afternoon / full，避免半天假被當成整天。
+function normPeriod(p) {
+  const s = String(p || '').trim().toLowerCase();
+  if (s === 'morning' || s === 'am') return 'morning';
+  if (s === 'afternoon' || s === 'pm') return 'afternoon';
   return 'full';
 }
 
@@ -694,7 +704,7 @@ async function syncFromBase44(env) {
   for (const r of dpcRecords) {
     const lt = ltById[r.leave_type_id];
     const inferred = periodFromShort(lt ? lt.short_name : '');
-    const period = inferred !== 'full' ? inferred : (r.period || 'full');
+    const period = inferred !== 'full' ? inferred : normPeriod(r.period);
     stmts.push(
       env.DB.prepare('INSERT INTO leave_records (id,employee_id,date,leave_type_id,period,note) VALUES (?,?,?,?,?,?)')
         .bind(r.id || crypto.randomUUID(), r.employee_id, r.date, r.leave_type_id, period, r.note || null),
@@ -713,7 +723,7 @@ async function syncFromBase44(env) {
 
 // 一筆休假折算成「天數」：整天=1、半天(上/下午)=0.5。
 function leaveDays(period) {
-  return period === 'morning' || period === 'afternoon' ? 0.5 : 1;
+  return normPeriod(period) !== 'full' ? 0.5 : 1;
 }
 
 // 警示檢查：對某員工在多個日期,算出「職代當天也請假」與「部門當天請假達 1/3」。
@@ -783,7 +793,7 @@ async function buildDashboard(env, date, deptParam) {
     const color = t ? t.color || '#64748b' : '#64748b';
     (byType[r.leave_type_id || '?'] ||= { name: t ? t.name : '未分類', short_name: label, color, count: 0 }).count += 1;
     const dept = safeIds(e.department_ids).map((id) => (deptById[id] || {}).name).filter(Boolean).join('、');
-    onLeaveList.push({ name: e.name, english_name: e.english_name || '', department: dept, label, period: r.period || 'full', color });
+    onLeaveList.push({ name: e.name, english_name: e.english_name || '', department: dept, label, period: normPeriod(r.period), color });
   }
 
   // 每部門當日請假人數 + 在職數(算 1/3 上限)
