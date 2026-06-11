@@ -250,11 +250,12 @@ function filterSlots(slots){
   for (const k of ['full','am','pm']) if (slots[k] && slots[k].label === typeFilter) keep[k] = slots[k];
   return (keep.full || keep.am || keep.pm) ? keep : null;
 }
-// 篩選假別時，只保留「有這個假別」的人（像部門篩選一樣隱藏其他人）
-function memberHasType(m){
+// 篩選假別時，只保留「目前畫面這段期間有這個假別」的人（單月＝當月、全年＝整年）。
+// 用 viewDates 限定範圍，避免列出「整年有但當月沒有」的人造成一排空白列。
+function memberHasType(m, viewDates){
   if (!typeFilter) return true;
   const lv = m.leaves || {};
-  for (const date in lv){ const s = lv[date]; if (s && ((s.full && s.full.label===typeFilter) || (s.am && s.am.label===typeFilter) || (s.pm && s.pm.label===typeFilter))) return true; }
+  for (const date of viewDates){ const s = lv[date]; if (s && ((s.full && s.full.label===typeFilter) || (s.am && s.am.label===typeFilter) || (s.pm && s.pm.label===typeFilter))) return true; }
   return false;
 }
 let deptMenuOpen = false;   // 手機版部門下拉是否展開
@@ -356,6 +357,7 @@ function cellHTML(slots, cls, empAttr, date){
 function render(data){
   LAST = data;
   const days = daysForView();
+  const viewDates = days.map((d) => d.date); // 目前畫面顯示的日期（單月＝當月、全年＝整年）
   const holidays = new Set(data.holidays || []);
   const legend = (data.legend && Object.keys(data.legend).length) ? data.legend : DEFAULT_COLORS;
   const today = todayStr();
@@ -449,7 +451,7 @@ function render(data){
   const depts = DEPTSEL.size ? allDepts.filter(d=>DEPTSEL.has(d.name)) : allDepts;
   let anyMember = false;
   depts.forEach((dept, di)=>{
-    const members = (dept.members || []).filter(memberHasType);
+    const members = (dept.members || []).filter((m) => memberHasType(m, viewDates));
     if (typeFilter && !members.length) return; // 篩選假別時，無人有此假別的部門整段略過
     html += `<tr class="dept"><td colspan="${colCount}"><span class="deptlabel">${dept.name || ''}</span></td></tr>`;
     DEPT_MEMBERS[di] = [];
@@ -482,7 +484,9 @@ function render(data){
   const status = document.getElementById('status');
   if (!anyMember){
     status.className = 'status';
-    status.textContent = '本月查無人員或休假資料。';
+    status.textContent = typeFilter
+      ? `${fullYear ? '今年' : '本月'}沒有人請「${typeFilter}」。可切換月份，或按「全年」查看整年。`
+      : '本月查無人員或休假資料。';
     status.style.display = '';
     table.style.display = 'none';
   } else {
