@@ -19,10 +19,8 @@
   .leave-item .dp{ color:var(--muted); font-size:14px; }
   .leave-item .sp{ flex:1; }
   .typewrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  .warn-item{ display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; }
-  .warn-item:last-child{ border-bottom:none; }
-  .warn-item .nm{ font-weight:600; min-width:72px; }
-  .warn-item .rs{ color:#b45309; }
+  .warn-note{ color:var(--muted); font-size:13px; margin-top:10px; line-height:1.6; }
+  .warn-note .wl{ color:#b45309; }
   .nwk{ display:inline-block; background:#f3f4f6; color:var(--muted); font-size:14px; border-radius:6px; padding:1px 8px; margin-left:8px; }
 </style>
 </head>
@@ -134,11 +132,8 @@ function render(s){
     : '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
 
   const warns = s.warnings || [];
-  const warnCard = warns.length ? `
-    <div class="card" style="margin-bottom:12px;border-color:#fde68a;">
-      <div class="row" style="justify-content:space-between;margin-bottom:6px;"><b>異常請假</b><span class="muted">${warns.length} 筆</span></div>
-      ${warns.map(w=>`<div class="warn-item"><span class="nm">${esc(w.name)}</span><span class="rs">${w.reasons.map(esc).join('；')}</span></div>`).join('')}
-    </div>` : '';
+  const warnLine = warns.length ? `
+    <div class="warn-note"><span class="wl">異常請假 ${warns.length} 筆</span>　${warns.map(w=>`${esc(w.name)}（${w.reasons.map(esc).join('、')}）`).join('；')}</div>` : '';
 
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
@@ -147,13 +142,13 @@ function render(s){
       <div class="card kpi"><div class="label">請假人數</div><div class="val">${s.on_leave_count}</div></div>
       <div class="card kpi"><div class="label">假別分佈</div>${typeChips}</div>
     </div>
-    ${warnCard}
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
         <b>休假人員 <span class="muted">${list.length} 人</span></b>
         ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
+      ${warnLine}
     </div>`;
 
   const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
