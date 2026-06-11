@@ -8,11 +8,9 @@
 <style>
   .greet h1{ font-size:20px; margin:0; font-weight:600; }
   .greet .sub{ color:var(--muted); font-size:14px; margin-top:2px; }
-  .datebar{ display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
-  /* 單一日期控制：可見的格式化日期 + 覆蓋其上的透明原生日期選擇器（避免重複的年/月控制）*/
-  .datewrap{ position:relative; flex:1; min-width:0; }
-  .datewrap .dlabel{ display:block; text-align:center; font-weight:600; padding:6px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .datewrap input[type=date]{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:none; opacity:0; background:transparent; -webkit-appearance:none; appearance:none; }
+  .datebar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
+  .datebar .dlabel{ flex:1; text-align:center; }
+  .datebar input[type=date]{ border:none; }
   .deptcard{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:12px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   .deptcard label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; cursor:pointer; }
   .leave-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
