@@ -22,10 +22,11 @@
   .day.picking{ outline:2px solid var(--blue); outline-offset:-2px; }
   .day.empty{ visibility:hidden; }
   .day .d{ font-size:14px; color:#374151; flex:none; }
-  /* 假別色塊填滿格子主體：全天填滿、半天只佔上半(早休)或下半(午休)，一眼分辨全天/半天 */
-  .day .dbody{ flex:1; min-height:0; width:100%; display:flex; flex-direction:column; gap:2px; margin-top:3px; }
-  .day .dbody .chip{ flex:1; display:flex; align-items:center; justify-content:center; width:100%; border-radius:6px; color:#fff; font-size:13px; font-weight:500; text-align:center; padding:0; white-space:nowrap; overflow:hidden; }
-  .day .dbody.half .chip{ flex:0 0 calc(50% - 1px); }
+  /* 假別色塊：全天＝置中色帶、半天＝只佔上半(早休)或下半(午休)。清楚分辨又不過於厚重 */
+  .day .dbody{ flex:1; min-height:0; width:100%; display:flex; flex-direction:column; justify-content:center; gap:2px; margin-top:3px; }
+  .day .dbody .chip{ flex:0 0 auto; height:60%; display:flex; align-items:center; justify-content:center; width:100%; border-radius:6px; color:#fff; font-size:13px; font-weight:500; text-align:center; padding:0 2px; white-space:nowrap; overflow:hidden; }
+  .day .dbody.half{ justify-content:flex-start; }
+  .day .dbody.half .chip{ height:calc(50% - 1px); }
   .day .dbody.half .chip.am{ margin-bottom:auto; }
   .day .dbody.half .chip.pm{ margin-top:auto; }
   .cal-nav{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:10px 0; }
@@ -198,13 +199,11 @@ function periodOfType(typeId){
 }
 function leaveDays(period){ return period==='morning'||period==='afternoon' ? 0.5 : 1; }
 
-function showCalendar(){
+// 計算本月日曆格、本月小計與區間提示 HTML（整頁渲染與局部更新共用）
+function buildMonth(){
   const y = cur.getFullYear(), m = cur.getMonth() + 1;
   const first = new Date(y, m-1, 1).getDay();
   const days = new Date(y, m, 0).getDate();
-
-  const opts = leaveTypes.map(t => `<option value="${t.id}"${t.id===selType?' selected':''}>${t.name}</option>`).join('');
-
   // 本月假別小計（天數，半天計 0.5）
   const monthPrefix = `${y}-${String(m).padStart(2,'0')}`;
   const sumByType = {};
@@ -215,16 +214,10 @@ function showCalendar(){
   // 年度累計：依各假別在「休假設定」的計入天數(day_value)加總（例：休=1、午休/早休=0.5、出差=0）
   const dayValueOf = (tid)=>{ const t = leaveTypes.find(x=>x.id===tid); return t ? (Number(t.day_value)||0) : 0; };
   let yearTot = 0;
-  for (const slots of Object.values(myLeaves)){
-    for (const lv of Object.values(slots)) yearTot += dayValueOf(lv.leave_type_id);
-  }
-
+  for (const slots of Object.values(myLeaves)){ for (const lv of Object.values(slots)) yearTot += dayValueOf(lv.leave_type_id); }
   const summary = Object.entries(sumByType).map(([tid,days])=>
     `<span class="sumitem"><span class="dot" style="background:${colorOf(tid)}"></span>${labelOf(tid)} ${days} 天</span>`).join('')
     + `<span class="sumitem"><b>${y} 年累計休假 ${yearTot} 天</b></span>`;
-
-  // 假別圖例
-  const legend = leaveTypes.map(t=>`<span class="sumitem"><span class="dot" style="background:${t.color||'#64748b'}"></span>${t.short_name||t.name} = ${t.name}</span>`).join('');
 
   let cells = '';
   for (let i=0;i<first;i++) cells += `<div class="day empty"></div>`;
@@ -251,6 +244,36 @@ function showCalendar(){
     const body = chip ? `<div class="dbody${halfCls}">${chip}</div>` : '';
     cells += `<div class="day${we?' we':''}${holCls}${picking}" data-date="${date}"><div class="dtop"><span class="d">${d}</span>${holHtml}</div>${body}</div>`;
   }
+  const calHtml = `${WEEKDAY.map((w,i)=>`<div class="wd${i===0||i===6?' we':''}">${w}</div>`).join('')}${cells}`;
+  const summaryHtml = summary ? `<div class="summary" id="monthSummary">${summary}</div>` : '<div class="muted" id="monthSummary" style="font-size:14px;">本月尚無休假</div>';
+  const rangeHtml = `<div id="rangeHint">${rangeMode ? `<div class="muted" style="font-size:14px; color:var(--blue);">區間模式：${rangeStart?`已選起點 ${rangeStart}，再點結束日`:'點第一天當起點'}</div>` : ''}</div>`;
+  return { calHtml, summaryHtml, rangeHtml };
+}
+
+function attachCellHandlers(){
+  app.querySelectorAll('.day[data-date]').forEach(el => {
+    el.onclick = () => onCell(el.dataset.date);
+    el.ondblclick = (ev) => onCellDbl(el.dataset.date, ev);
+  });
+}
+
+// 編輯後只局部重畫日曆格、本月小計與區間提示，不重建整頁 → 不閃爍
+function refreshMonth(){
+  const calEl = app.querySelector('.cal');
+  if (!calEl){ showCalendar(); return; }
+  const { calHtml, summaryHtml, rangeHtml } = buildMonth();
+  calEl.innerHTML = calHtml;
+  const ms = document.getElementById('monthSummary'); if (ms) ms.outerHTML = summaryHtml;
+  const rh = document.getElementById('rangeHint'); if (rh) rh.outerHTML = rangeHtml;
+  attachCellHandlers();
+}
+
+function showCalendar(){
+  const y = cur.getFullYear(), m = cur.getMonth() + 1;
+  const opts = leaveTypes.map(t => `<option value="${t.id}"${t.id===selType?' selected':''}>${t.name}</option>`).join('');
+  // 假別圖例
+  const legend = leaveTypes.map(t=>`<span class="sumitem"><span class="dot" style="background:${t.color||'#64748b'}"></span>${t.short_name||t.name} = ${t.name}</span>`).join('');
+  const { calHtml, summaryHtml, rangeHtml } = buildMonth();
 
   app.innerHTML = `
     <div class="page-head">
@@ -268,16 +291,13 @@ function showCalendar(){
         </span>
         <button class="btn sm" id="next">下個月 ›</button>
       </div>
-      ${summary ? `<div class="summary">${summary}</div>` : '<div class="muted" style="font-size:14px;">本月尚無休假</div>'}
+      ${summaryHtml}
       <div class="row" style="margin:10px 0; gap:8px;">
         <select id="ltype" style="flex:1; min-width:140px;"><option value="">選擇假別…</option>${opts}</select>
         <button class="btn ${rangeMode?'primary':''}" id="rangeBtn" title="區間請假">區間</button>
       </div>
-      ${rangeMode ? `<div class="muted" style="font-size:14px; color:var(--blue);">區間模式：${rangeStart?`已選起點 ${rangeStart}，再點結束日`:'點第一天當起點'}</div>` : ''}
-      <div class="cal">
-        ${WEEKDAY.map((w,i)=>`<div class="wd${i===0||i===6?' we':''}">${w}</div>`).join('')}
-        ${cells}
-      </div>
+      ${rangeHtml}
+      <div class="cal">${calHtml}</div>
       <div class="muted" style="margin-top:10px;">填入：選假別後點日期。取消：雙擊已填入的格子。區間：按「區間」後點起訖兩天。</div>
     </div>
     <div class="card" style="margin-top:12px;">
@@ -304,11 +324,8 @@ function showCalendar(){
   document.getElementById('selYear').onchange = ymJump;
   document.getElementById('selMonth').onchange = ymJump;
   document.getElementById('ltype').onchange = (ev) => { selType = ev.target.value; };
-  document.getElementById('rangeBtn').onclick = () => { rangeMode = !rangeMode; rangeStart = null; showCalendar(); };
-  app.querySelectorAll('.day[data-date]').forEach(el => {
-    el.onclick = () => onCell(el.dataset.date);
-    el.ondblclick = (ev) => onCellDbl(el.dataset.date, ev);
-  });
+  document.getElementById('rangeBtn').onclick = () => { rangeMode = !rangeMode; rangeStart = null; document.getElementById('rangeBtn').classList.toggle('primary', rangeMode); refreshMonth(); };
+  attachCellHandlers();
 }
 
 function slotOf(period){ return period==='morning'?'am':period==='afternoon'?'pm':'full'; }
@@ -317,7 +334,7 @@ function onCell(date){
   const slots = myLeaves[date];
   if (rangeMode){
     if (!selType){ App.toast('請先選擇假別','err'); return; }
-    if (!rangeStart){ rangeStart = date; showCalendar(); return; }
+    if (!rangeStart){ rangeStart = date; refreshMonth(); return; }
     const a = rangeStart < date ? rangeStart : date;
     const b = rangeStart < date ? date : rangeStart;
     rangeStart = null;
@@ -385,7 +402,7 @@ async function deleteIds(ids){
   try {
     const r = await api('/api/my-leaves/delete', { method:'POST', body: JSON.stringify({ ids }) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    await loadMyLeaves(); showCalendar();
+    await loadMyLeaves(); refreshMonth();
   } catch (e) { App.toast('刪除失敗：' + e.message,'err'); }
 }
 
@@ -411,13 +428,13 @@ async function addLeave(date, typeId){
   if (w.length && !(await App.confirm('注意：\n' + w.join('\n') + '\n\n仍要請假嗎？', { title:'請假提醒', okText:'仍要請假' }))) return;
   try {
     await api('/api/my-leaves', { method:'POST', body: JSON.stringify({ date, leave_type_id: typeId, period: periodOfType(typeId) }) });
-    await loadMyLeaves(); showCalendar();
+    await loadMyLeaves(); refreshMonth();
   } catch (e) { App.toast('操作失敗：' + e.message,'err'); }
 }
 async function cancelLeave(id){
   try {
     await api(`/api/my-leaves/${id}`, { method:'DELETE' });
-    await loadMyLeaves(); showCalendar();
+    await loadMyLeaves(); refreshMonth();
   } catch (e) { App.toast('操作失敗：' + e.message,'err'); }
 }
 async function fillRange(startDate, endDate, typeId){
@@ -438,7 +455,7 @@ async function fillRange(startDate, endDate, typeId){
     const r = await api('/api/my-leaves/bulk', { method:'POST', body: JSON.stringify({ items }) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
   } catch (e) { App.toast('區間請假失敗：' + e.message,'err'); }
-  await loadMyLeaves(); showCalendar();
+  await loadMyLeaves(); refreshMonth();
 }
 
 init();
