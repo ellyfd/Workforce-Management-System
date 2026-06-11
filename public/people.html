@@ -92,7 +92,7 @@ function nameOf(id){ const e=empById(id); return e?e.name:''; }
 
 async function loadAll(){
   const [rd, re] = await Promise.all([ App.adminApi('/api/admin/departments'), App.adminApi('/api/admin/employees') ]);
-  if (rd.status===401 || re.status===401){ document.getElementById('panel').innerHTML = '<div class="status err">需要管理密鑰才能使用此頁。</div>'; return; }
+  if (rd.status===401 || re.status===401){ document.getElementById('panel').innerHTML = '<div class="status err">此頁僅限管理員。請在「我的排休 → 切換身分」綁定為管理員帳號。</div>'; return; }
   depts = rd.ok ? await rd.json() : [];
   emps = re.ok ? await re.json() : [];
   render();

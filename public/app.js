@@ -3,6 +3,7 @@
   const params = new URLSearchParams(location.search);
   const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
   const DEVICE = localStorage.getItem('dev_device_token') || '';
+  try { localStorage.removeItem('dev_admin_key'); } catch (_) {} // 移除舊版殘留的 ADMIN_KEY（已不再使用）
 
   // /api/me 的 sessionStorage 快取：換頁先用快取畫側欄、背景再驗證，
   // 讓導覽不必每頁都等一趟網路往返。快取綁定 device token，換 token 即失效。
@@ -53,7 +54,6 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
-  function adminKey() { return localStorage.getItem('dev_admin_key') || ''; }
 
   // 年/月下拉選項（跨年資料瀏覽用）。年度範圍＝今年-3 ～ 今年+1，並保證包含目前選到的年份。
   function yearOptions(sel) {
@@ -70,26 +70,19 @@
     return out;
   }
   function api(path, opts = {}) {
-    const k = adminKey();
     return fetch(API_BASE + path, {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
         ...(DEVICE ? { 'X-Device-Token': DEVICE } : {}),
-        ...(k ? { 'X-Admin-Key': k } : {}),
         ...(opts.headers || {}),
       },
     });
   }
-  async function adminApi(path, opts = {}) {
-    let res = await api(path, opts);
-    if (res.status === 401 && !window.App.isAdmin) {
-      const key = prompt('需要管理權限（管理員帳號或 ADMIN_KEY）：', adminKey());
-      if (key == null) return res;
-      localStorage.setItem('dev_admin_key', key.trim());
-      res = await api(path, opts);
-    }
-    return res;
+  // 管理 API：權限完全由「本裝置綁定的 admin 帳號」決定（不再有 ADMIN_KEY 後門/輸入框）。
+  // 非管理員會收到 401，由各頁顯示「此頁僅限管理員」提示。
+  function adminApi(path, opts = {}) {
+    return api(path, opts);
   }
 
   function navItems(items) {
