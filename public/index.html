@@ -501,13 +501,17 @@ const isAdmin = ()=> !!(window.App && window.App.isAdmin);
 async function initEditing(){
   if (editingInit) return;
   editingInit = true;
-  const sel = document.getElementById('ltype'); // 非管理員時工具列已被移除
-  if (sel) {
+  if (document.getElementById('ltype')) { // 非管理員時工具列已被移除
     try { leaveTypes = await (await fetch(`${API_BASE}/api/leave-types`, { cache:'no-store' })).json(); } catch (_) { leaveTypes = []; }
-    sel.innerHTML = '<option value="">下拉選單</option>' + leaveTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
-    sel.onchange = (e)=>{ selType = e.target.value; };
+    // ⚠️ 上面 await 期間，app.js 可能剛判定「非管理員」並移除 .admin-only 工具列，
+    //    所以這裡要「重新取得」元素並逐一判空，否則一般角色會在此炸掉、整頁卡在載入中。
+    const sel = document.getElementById('ltype');
     const rb = document.getElementById('rangeBtn');
-    rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : ''; render(LAST); };
+    if (sel) {
+      sel.innerHTML = '<option value="">下拉選單</option>' + leaveTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
+      sel.onchange = (e)=>{ selType = e.target.value; };
+    }
+    if (rb) rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : ''; render(LAST); };
   }
   const table = document.getElementById('table');
   table.addEventListener('click', (e)=>{ if (!isAdmin()) return; const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
@@ -669,7 +673,8 @@ async function load(silent){
   }
   // 先發出行事曆請求，與 initEditing（抓假別）並行，少一趟往返
   const pCal = fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
-  await initEditing();
+  // initEditing 失敗也不能擋住畫面渲染（例如非管理員的工具列在 await 期間被移除）
+  try { await initEditing(); } catch (e) { console.warn('initEditing 失敗（不影響顯示）', e); }
   try {
     const res = await pCal;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
