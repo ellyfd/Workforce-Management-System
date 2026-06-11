@@ -219,6 +219,8 @@
 const params = new URLSearchParams(location.search);
 // 預設打部署好的 Worker；同源服務時這個絕對網址一樣會通，CORS 已開放。
 const API_BASE = (params.get('api') || 'https://workforcemanagement.ellyfd.workers.dev').replace(/\/+$/, '');
+// DPC 過渡資料：排程產生的 public/dpc.json，D1 尚無資料時暫時合併顯示。
+const DPC_URL = params.get('dpc') || './dpc.json';
 
 const WEEKDAY = ['日','一','二','三','四','五','六'];
 const DEFAULT_COLORS = { '休':'#22c55e','差':'#ec4899','午休':'#a855f7','病':'#f97316','員旅':'#9ca3af','早休':'#3b82f6' };
@@ -303,6 +305,17 @@ function colorFor(label, legend){
 }
 
 // 把過渡用的 DPC 區塊合併進 D1 來的資料：
+// 取代同名(3D team（DPC）)部門、補進 DPC 的假別色與國定假日。
+function mergeDpc(base, dpc){
+  if (!dpc) return base;
+  base.legend = { ...(dpc.legend || {}), ...(base.legend || {}) };
+  base.holidays = [...new Set([...(base.holidays || []), ...(dpc.holidays || [])])];
+  const name = dpc.department_name || '3D team（DPC）';
+  base.departments = (base.departments || []).filter(d => d.name !== name);
+  base.departments.push({ name, members: dpc.members || [] });
+  return base;
+}
+
 // 由假別文字判斷是否為半天（早＝上午、午＝下午），決定色塊占滿或只占一半。
 function periodOf(label){
   if (/早/.test(label)) return 'am';
@@ -655,8 +668,7 @@ async function load(silent){
     document.getElementById('table').style.display = 'none';
   }
   // 先發出行事曆請求，與 initEditing（抓假別）並行，少一趟往返
-  // 用 App.api 帶上裝置 token，後端才能依檢視者身分限縮可見部門
-  const pCal = App.api(`/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
+  const pCal = fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
   await initEditing();
   try {
     const res = await pCal;
@@ -664,10 +676,24 @@ async function load(silent){
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
 
-    // DPC 已由 Worker 同步進 D1，直接用後端回傳；不再做靜態 dpc.json 過渡合併
-    // （過渡合併在「依檢視者限縮可見部門」後會誤判：非 DPC 使用者本來就沒 DPC，
-    //  舊邏輯會去抓外部 dpc.json 造成卡住，且把 DPC 併回去而破壞權限範圍）
-    render(data);
+    // D1 已經有 DPC（已由 Worker 同步進來）→ 直接用 D1。
+    // 還沒有（尚未部署/同步）→ 暫時合併靜態 dpc.json 當過渡，讓畫面先有資料。
+    const hasDpcInD1 = (data.departments || []).some((d) => /DPC/i.test(d.name || ''));
+    if (hasDpcInD1) {
+      render(data);
+    } else {
+      let dpc = null;
+      try {
+        const r2 = await fetch(DPC_URL, { cache: 'no-store' });
+        if (r2.ok) dpc = await r2.json();
+      } catch (_) { /* ignore */ }
+      render(mergeDpc(data, dpc));
+      if (dpc && dpc.updated_at) {
+        const foot = document.getElementById('footer');
+        const dpcTxt = `DPC 過渡資料：${new Date(dpc.updated_at).toLocaleString('zh-TW')}`;
+        foot.textContent = foot.textContent ? `${foot.textContent}　|　${dpcTxt}` : dpcTxt;
+      }
+    }
     if (silent && sc){ sc.scrollLeft = keepL; sc.scrollTop = keepT; }
   } catch (e) {
     if (silent){ App.toast('更新顯示失敗，請重新整理','err'); return; }

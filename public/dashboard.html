@@ -97,7 +97,11 @@ function renderDeptFilter(){
 }
 
 async function boot(){
-  load(); // 當日資料（含可見部門清單）依檢視者身分回傳，最先發出
+  load(); // 當日資料不依賴身分，最先發出
+  // 部門篩選（與儀表板資料並行載入）；桌機行內多選、手機收合為下拉
+  fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'}).then(r=>r.json()).then(ds=>{
+    DEPTS = ds || []; renderDeptFilter();
+  }).catch(()=>{ DEPTS = []; renderDeptFilter(); });
   // 身分由 app.js 提供（含快取），不再自打 /api/me（打招呼用）
   me = (await App.ready).me;
   document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
@@ -109,8 +113,7 @@ async function load(){
   c.innerHTML = '<div class="status">載入中…</div>';
   try {
     const dept = [...DEPTSEL].join(',');
-    // 用 App.api 帶裝置 token，後端依檢視者身分限縮可見部門
-    const r = await App.api(`/api/dashboard?date=${ymd(cur)}${dept?`&dept=${dept}`:''}`, { cache:'no-store' });
+    const r = await fetch(`${App.API_BASE}/api/dashboard?date=${ymd(cur)}${dept?`&dept=${dept}`:''}`, { cache:'no-store' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     render(await r.json());
   } catch (e) {
@@ -119,9 +122,6 @@ async function load(){
 }
 
 function render(s){
-  // 部門下拉只顯示檢視者可見的部門（後端已依身分限縮）
-  const ids = (s.departments||[]).map(d=>d.id).join(',');
-  if (ids !== DEPTS.map(d=>d.id).join(',')){ DEPTS = s.departments || []; renderDeptFilter(); }
   const types = s.by_type || [];
   const typeChips = types.length
     ? `<div class="typewrap">${types.map(t=>`<span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)} ${t.count}</span>`).join('')}</div>`
