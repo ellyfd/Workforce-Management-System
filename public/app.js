@@ -318,9 +318,39 @@
     resolveReady({ me, isAdmin });
   }
 
+  // 輕量 toast 通知（取代刺眼的 alert）。type：'ok'｜'err'｜空（中性）
+  function toast(msg, type) {
+    let host = document.querySelector('.toast-host');
+    if (!host) { host = document.createElement('div'); host.className = 'toast-host'; document.body.appendChild(host); }
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' ' + type : '');
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; setTimeout(() => el.remove(), 250); }, 2600);
+  }
+
+  // App 內建確認對話框（取代 window.confirm）。回傳 Promise<boolean>。
+  function confirmDialog(message, opts = {}) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'modal-scrim';
+      wrap.innerHTML = `<div class="modal"><h3>${esc(opts.title || '確認')}</h3>
+        <p style="margin:0 0 16px;white-space:pre-wrap;line-height:1.6;">${esc(message)}</p>
+        <div class="actions">
+          <button class="btn" id="c_cancel">${esc(opts.cancelText || '取消')}</button>
+          <button class="btn ${opts.danger ? 'danger' : 'primary'}" id="c_ok">${esc(opts.okText || '確定')}</button>
+        </div></div>`;
+      document.body.appendChild(wrap);
+      const done = (v) => { wrap.remove(); resolve(v); };
+      wrap.querySelector('#c_cancel').onclick = () => done(false);
+      wrap.querySelector('#c_ok').onclick = () => done(true);
+      wrap.onclick = (e) => { if (e.target === wrap) done(false); };
+    });
+  }
+
   let resolveReady;
   window.App = {
-    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, me: null, isAdmin: false,
+    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, toast, confirm: confirmDialog, me: null, isAdmin: false,
     // 頁面可 await App.ready 取得身分（殼畫好後 resolve；未綁定時 me 為 null）
     ready: new Promise((r) => { resolveReady = r; }),
   };
