@@ -210,11 +210,19 @@
       ${monthStat.sum ? `<div class="pp-total"><span>小計</span><span>${monthStat.sum} 天</span></div>` : ''}
       <h3 class="pp-sect">${year} 年度累計</h3>
       ${rows(yearStat) || '<div class="muted" style="padding:4px 2px;">今年尚無請假</div>'}
-      ${yearStat.sum ? `<div class="pp-total"><span>年度合計</span><span>${yearStat.sum} 天</span></div>` : ''}`;
+      ${yearStat.sum ? `<div class="pp-total"><span>年度合計</span><span>${yearStat.sum} 天</span></div>` : ''}
+      ${!editing ? `<div class="row" id="ppAuth" style="gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+        <button class="btn" id="ppSwitch" style="flex:1;">切換身分</button>
+        <button class="btn danger" id="ppLogout" style="flex:1;">登出</button>
+      </div>` : ''}`;
 
     if (!editing) {
       const eb = document.getElementById('ppEdit');
       if (eb) eb.onclick = (e) => { e.preventDefault(); renderProfile(ctx, true); };
+      // 切換身分／登出：清掉本裝置綁定與快取後重載 → 回到選名字的綁定畫面
+      const signOut = () => { try { localStorage.removeItem('dev_device_token'); } catch (_) {} writeMeCache(null); location.reload(); };
+      const sw = document.getElementById('ppSwitch'); if (sw) sw.onclick = signOut;
+      const lo = document.getElementById('ppLogout'); if (lo) lo.onclick = signOut;
       return;
     }
     document.getElementById('ppCancel').onclick = () => renderProfile(ctx, false);
@@ -254,7 +262,7 @@
         <div class="bindbox">
           <div class="bindbrand">開發處休假表</div>
           <h2>請選擇你的名字</h2>
-          <p class="muted">綁定後本裝置會記住你的身分，下次免選（可在「我的排休 → 切換身分」更換）。</p>
+          <p class="muted">綁定後本裝置會記住你的身分，下次免選（可在右上「個人資料」最下方切換身分或登出）。</p>
           <input id="bindSearch" type="text" placeholder="輸入中文名或英文名搜尋…" autocomplete="off" />
           <div class="bindlist" id="bindList"></div>
         </div>

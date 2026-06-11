@@ -375,8 +375,6 @@ function showCalendar(){
     <div class="page-head">
       <h1>我的排休</h1>
       <div class="sub">${me.name}${me.english_name?`（${me.english_name}）`:''}</div>
-      <div class="spacer"></div>
-      <button class="btn sm" id="logout">切換身分</button>
     </div>
     <div class="card">
       <div class="cal-nav">
@@ -410,7 +408,6 @@ function showCalendar(){
       </details>
     </div>`;
 
-  document.getElementById('logout').onclick = () => { localStorage.removeItem('dev_device_token'); sessionStorage.removeItem('dev_me_cache'); location.reload(); };
   document.getElementById('prev').onclick = async () => { cur = new Date(y, m-2, 1); rangeStart=null; await loadMyLeaves(); showCalendar(); };
   document.getElementById('next').onclick = async () => { cur = new Date(y, m, 1); rangeStart=null; await loadMyLeaves(); showCalendar(); };
   const ymJump = async () => {
