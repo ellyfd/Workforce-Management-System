@@ -158,6 +158,22 @@ table.data th, table.data td{ text-align:left; padding:10px 12px; border-bottom:
 table.data th{ color:var(--muted); font-weight:600; font-size:14px; }
 table.data tr:last-child td{ border-bottom:none; }
 
+/* 可排序 / 可篩選的表頭 */
+table.data th.col{ user-select:none; }
+table.data th.col .th-in{ display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+table.data th.col .th-in:hover{ color:#111827; }
+table.data th.col .arr{ font-size:11px; color:var(--blue); }
+table.data th.col .arr.dim{ color:#cbd5e1; }
+table.data th.col .fbtn{ border:none; background:none; cursor:pointer; color:var(--muted); padding:2px 5px; margin-left:4px; border-radius:5px; line-height:0; vertical-align:middle; }
+table.data th.col .fbtn:hover{ background:#f3f4f6; color:#111827; }
+table.data th.col .fbtn.on{ color:#fff; background:var(--blue); }
+.colpop{ position:fixed; z-index:200; background:#fff; border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.14); padding:8px; min-width:180px; max-width:280px; max-height:60vh; overflow:auto; }
+.colpop label{ display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; font-size:14px; color:#374151; }
+.colpop label:hover{ background:#f3f4f6; }
+.colpop label input{ width:16px; height:16px; }
+.colpop input[type=search]{ width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid var(--border); border-radius:8px; }
+.colpop .foot{ display:flex; justify-content:flex-end; padding-top:6px; margin-top:6px; border-top:1px solid var(--border); }
+
 .empty{ text-align:center; color:var(--muted); padding:28px 12px; }
 .status{ color:var(--muted); padding:18px; text-align:center; }
 .err{ color:var(--red); }
