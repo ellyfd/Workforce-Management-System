@@ -8,7 +8,7 @@
 <style>
   .greet h1{ font-size:20px; margin:0; font-weight:600; }
   .greet .sub{ color:var(--muted); font-size:14px; margin-top:2px; }
-  .datebar{ display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
+  .datebar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
   .datebar .dlabel{ flex:1; text-align:center; font-weight:600; }
   .datebar input[type=date]{ border:none; font-weight:600; }
   .deptcard{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:12px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
@@ -37,6 +37,8 @@
     <button class="btn sm" id="prev">‹</button>
     <input type="date" id="date" class="dlabel" />
     <button class="btn sm" id="next">›</button>
+    <select id="selYear" title="選擇年度"></select>
+    <select id="selMonth" title="選擇月份"></select>
     <button class="btn sm" id="today">今天</button>
   </div>
 
@@ -72,6 +74,8 @@ async function boot(){
 
 async function load(){
   document.getElementById('date').value = ymd(cur);
+  document.getElementById('selYear').innerHTML = App.yearOptions(cur.getFullYear());
+  document.getElementById('selMonth').innerHTML = App.monthOptions(cur.getMonth()+1);
   document.getElementById('todayLabel').textContent = `${cur.getFullYear()}年${pad(cur.getMonth()+1)}月${pad(cur.getDate())}日（${'日一二三四五六'[cur.getDay()]}）`;
   const c = document.getElementById('content');
   c.innerHTML = '<div class="status">載入中…</div>';
@@ -135,6 +139,16 @@ async function dedupe(){
   load();
 }
 
+// 年/月下拉跳轉：保留原本的「日」，超過該月天數則取月底
+function jumpYm(){
+  const y = Number(document.getElementById('selYear').value);
+  const m = Number(document.getElementById('selMonth').value);
+  const d = Math.min(cur.getDate(), new Date(y, m, 0).getDate());
+  cur = new Date(y, m-1, d);
+  load();
+}
+document.getElementById('selYear').onchange = jumpYm;
+document.getElementById('selMonth').onchange = jumpYm;
 document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-1); load(); };
 document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+1); load(); };
 document.getElementById('today').onclick = ()=>{ cur = new Date(); load(); };
