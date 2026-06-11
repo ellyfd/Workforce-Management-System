@@ -46,12 +46,7 @@
   .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
-  .helpbox { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-top: 10px; }
-  .helpbox summary { cursor: pointer; font-weight: 600; }
-  .helpbox .legend { margin: 6px 0 2px; }
   .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size:14px; color: #374151; }
-  .legend .dot { width: 14px; height: 14px; border-radius: 4px; }
-  .legend .note { color: var(--muted); font-size:14px; }
   /* 假別篩選 chip（桌機）：色票，選中填滿 */
   .tchip{ box-sizing:border-box; min-width:52px; text-align:center; border:1.5px solid var(--c,#cbd5e1); color:var(--c,#475569); background:#fff; border-radius:999px; padding:4px 9px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2; }
   .tchip.tall{ --c:#94a3b8; }
@@ -67,7 +62,9 @@
     border-radius: 10px;
     background: #fff;
     max-height: calc(100vh - 190px);
-    overscroll-behavior: none;
+    /* 只攔橫向（避免滑到邊緣觸發瀏覽器返回手勢）；
+       縱向放行：內層捲到底時讓整頁接手，才看得到下方頁尾、不會「卡住滑不動」。 */
+    overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: auto;
   }
   table { border-collapse: separate; border-spacing: 0; width: max-content; }
@@ -146,6 +143,19 @@
   .status { padding: 24px; color: var(--muted); font-size: 14px; }
   .err { color: #b91c1c; }
   footer { color: var(--muted); font-size:14px; margin-top: 8px; }
+  footer .linklike { background: none; border: none; padding: 0; margin-left: 10px; font: inherit; font-size: 14px; color: var(--blue); cursor: pointer; }
+  footer .linklike:hover { text-decoration: underline; }
+
+  /* 第一次來的互動式引導（聚光燈 + 步驟卡，同「我的排休」） */
+  .tour-mask{ position:fixed; inset:0; z-index:299; }
+  .tour-spot{ position:fixed; border-radius:10px; box-shadow:0 0 0 9999px rgba(15,23,42,.55); z-index:300; pointer-events:none; transition:left .2s,top .2s,width .2s,height .2s; }
+  .tour-card{ position:fixed; z-index:301; box-sizing:border-box; width:300px; max-width:calc(100vw - 24px); background:#fff; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,.28); padding:16px; font-size:14px; line-height:1.6; color:#374151; }
+  .tour-card h4{ margin:0 0 6px; font-size:15px; color:#111827; }
+  .tour-card .tnav{ display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:8px; }
+  .tour-card .tdots{ display:flex; gap:5px; }
+  .tour-card .tdots i{ width:7px; height:7px; border-radius:50%; background:var(--border); display:inline-block; }
+  .tour-card .tdots i.on{ background:var(--blue); }
+  .tour-card .tbtns{ display:flex; gap:8px; }
 
   /* 平板/手機：表單控制項被全站樣式放大為 16px（避免 iOS 聚焦縮放），
      同步把頁首的標籤、按鈕、勾選也放大到 16px，整排字級才看起來一致。 */
@@ -194,19 +204,7 @@
 
   <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
 
-  <details class="helpbox">
-    <summary>操作說明與假別圖例</summary>
-    <ul class="muted admin-only" style="margin:10px 0 4px;padding-left:18px;line-height:1.8;">
-      <li>填入：選假別後點格子；取消：雙擊已填入的格子（半天點上半/下半）。</li>
-      <li>區間：按「區間」後，點同一人列的起始日與結束日。</li>
-    </ul>
-    <ul class="muted" style="margin:10px 0 4px;padding-left:18px;line-height:1.8;">
-      <li>「累計」＝年度累計休假日，依「休假設定」各假別的計入天數加總（例：休=1、午休/早休=0.5）。</li>
-    </ul>
-    <div style="font-weight:600;margin:8px 0 2px;">假別圖例</div>
-    <div class="legend" id="legend"></div>
-  </details>
-  <footer id="footer"></footer>
+  <footer><span id="footer"></span><button class="linklike" id="replayTour" type="button">▶ 重看操作引導</button></footer>
 </div>
 
 <script src="app.js"></script>
@@ -363,20 +361,6 @@ function render(data){
   const today = todayStr();
   document.getElementById('title').textContent = '全部排休';
   syncYmSelects();
-
-  // 圖例
-  const leg = document.getElementById('legend');
-  leg.innerHTML = '';
-  Object.entries(legend).forEach(([label,color])=>{
-    const el = document.createElement('span');
-    el.className = 'item';
-    el.innerHTML = `<span class="dot" style="background:${color}"></span>${label}`;
-    leg.appendChild(el);
-  });
-  const note = document.createElement('span');
-  note.className = 'note';
-  note.textContent = '・半天假以半格顯示（早休＝上半、午休＝下半）';
-  leg.appendChild(note);
 
   // 表頭
   const table = document.getElementById('table');
@@ -757,8 +741,71 @@ document.getElementById('yearBtn').onclick = () => {
   load().then(scrollToToday);
 };
 
+// ── 第一次來的互動式引導：只能看不能改、月/年切換、部門與假別篩選（同「我的排休」） ──
+const TOUR_KEY = 'dev_all_tour_done';
+function startTour(){
+  if (document.querySelector('.tour-mask')) return; // 避免重複開啟
+  const steps = [
+    (window.App && App.isAdmin)
+      ? { sel:'.toolbar.admin-only', title:'管理員編輯', body:'選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' }
+      : { sel:'.scroll', title:'這裡只能看', body:'「全部排休」是全處總表，僅供查看、不能修改。要排自己的休假，請到選單的「我的排休」。' },
+    { sel:'.toolbar', title:'切換月份／全年', body:'用 ‹ › 或年/月下拉換月份；按「全年」一次看整年，「今天」跳回本月。' },
+    { sel:'#deptbar', title:'篩選部門', body:'勾選想看的部門，只顯示勾到的；不勾＝全部。' },
+    { sel:'#typebar', title:'只看某個假別', body:'點假別色票（手機為下拉）就只顯示該假別，並只列出有請的人。' },
+  ].filter(s => document.querySelector(s.sel));
+  if (!steps.length) return;
+  let i = 0;
+  const mask = document.createElement('div'); mask.className = 'tour-mask';
+  const spot = document.createElement('div'); spot.className = 'tour-spot';
+  const card = document.createElement('div'); card.className = 'tour-card';
+  document.body.append(mask, spot, card);
+  const cleanup = ()=>{ mask.remove(); spot.remove(); card.remove(); window.removeEventListener('resize', renderStep); window.removeEventListener('scroll', renderStep, true); };
+  const finish = ()=>{ try{ localStorage.setItem(TOUR_KEY,'1'); }catch(_){ } cleanup(); };
+  function renderStep(){
+    const st = steps[i];
+    const el = document.querySelector(st.sel);
+    if (!el){ finish(); return; }
+    const r = el.getBoundingClientRect(), pad = 6;
+    spot.style.left = (r.left-pad)+'px'; spot.style.top = (r.top-pad)+'px';
+    spot.style.width = (r.width+pad*2)+'px'; spot.style.height = (r.height+pad*2)+'px';
+    const last = i === steps.length-1;
+    card.innerHTML = `<h4>${st.title}</h4><div>${st.body}</div>
+      <div class="tnav">
+        <div class="tdots">${steps.map((_,k)=>`<i class="${k===i?'on':''}"></i>`).join('')}</div>
+        <div class="tbtns">
+          <button class="btn sm" data-act="skip">略過</button>
+          ${i>0?'<button class="btn sm" data-act="prev">上一步</button>':''}
+          <button class="btn sm primary" data-act="next">${last?'開始使用':'下一步'}</button>
+        </div>
+      </div>`;
+    const ch = card.offsetHeight, cw = card.offsetWidth;
+    let top = r.bottom + 12;
+    if (top + ch > window.innerHeight - 12) top = Math.max(12, r.top - 12 - ch);
+    let left = Math.max(12, Math.min(r.left, window.innerWidth - cw - 12));
+    card.style.top = top+'px'; card.style.left = left+'px';
+    card.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+      const a = b.dataset.act;
+      if (a==='skip') return finish();
+      if (a==='prev'){ i--; renderStep(); return; }
+      if (last) return finish();
+      i++; gotoStep();
+    });
+  }
+  function gotoStep(){ const el = document.querySelector(steps[i].sel); if (el) el.scrollIntoView({ block:'center' }); renderStep(); }
+  gotoStep();
+  window.addEventListener('resize', renderStep);
+  window.addEventListener('scroll', renderStep, true);
+}
+async function maybeStartTour(){
+  try { if (localStorage.getItem(TOUR_KEY)) return; } catch(_) { return; }
+  const { me } = await App.ready; // 等身分判定；未綁定會先進綁定畫面（綁完自動 reload 再跑）
+  if (!me || !LAST) return;       // 沒綁定或資料載入失敗就不跑
+  setTimeout(startTour, 300);
+}
+document.getElementById('replayTour').onclick = ()=>{ App.ready.then(()=>startTour()); };
+
 syncYmSelects(); // 載入完成前先讓下拉有內容
-load().then(scrollToToday);
+load().then(scrollToToday).then(maybeStartTour);
 </script>
 </body>
 </html>
