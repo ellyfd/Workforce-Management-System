@@ -51,13 +51,29 @@
   .legend .dot { width: 14px; height: 14px; border-radius: 4px; }
   .legend .note { color: var(--muted); font-size:14px; }
 
+  /* 部門篩選改下拉多選，收合成一行以縮短頁首高度 */
+  .deptdrop { position: relative; display: inline-block; }
+  .deptdrop .deptbtn { display: inline-flex; align-items: center; gap: 6px; }
+  .deptdrop .deptbtn .caret { color: var(--muted); }
+  .deptmenu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 40;
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 6px; min-width: 200px;
+    max-height: 56vh; overflow: auto; }
+  .deptmenu label { display: flex; align-items: center; gap: 8px; padding: 9px 10px;
+    border-radius: 8px; cursor: pointer; font-size: 15px; white-space: nowrap; }
+  .deptmenu label:hover { background: #f3f4f6; }
+  .deptmenu label input { width: 16px; height: 16px; }
+  .deptmenu .foot { display: flex; gap: 8px; justify-content: space-between;
+    border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
+
   .scroll {
     overflow: auto;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: #fff;
     max-height: calc(100vh - 190px);
-    overscroll-behavior: contain;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: auto;
   }
   table { border-collapse: separate; border-spacing: 0; width: max-content; }
   th, td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -217,6 +233,18 @@ let editingInit = false;
 let fullYear = false;       // 全年模式
 let highlightDate = null;   // 雙擊日期欄高亮整欄
 let DEPTSEL = new Set();    // 部門篩選(空=全部)
+let deptMenuOpen = false;   // 手機版部門下拉是否展開
+const deptMobile = window.matchMedia('(max-width: 560px)'); // 手機才把部門篩選收成下拉
+// 跨越手機/桌機斷點時重繪（部門篩選樣式不同）
+deptMobile.addEventListener('change', () => { deptMenuOpen = false; if (LAST) render(LAST); });
+// 點下拉外面就收起部門選單
+document.addEventListener('click', (e) => {
+  if (!deptMenuOpen) return;
+  if (e.target.closest && e.target.closest('#deptDrop')) return;
+  deptMenuOpen = false;
+  const m = document.getElementById('deptMenu'); if (m) m.hidden = true;
+  const b = document.getElementById('deptBtn'); if (b) b.setAttribute('aria-expanded', 'false');
+});
 
 // 依目前檢視(單月/全年)產生日期欄
 function daysForView(){
@@ -341,14 +369,32 @@ function render(data){
   });
   html += '</tr></thead><tbody>';
 
-  // 部門篩選列
+  // 部門篩選：桌機沿用行內多選；手機收合為下拉多選（縮短頁首高度）
   const allDepts = data.departments || [];
   const bar = document.getElementById('deptbar');
-  bar.innerHTML = '<span class="muted">部門：</span>' + allDepts.map(d=>
-    `<label class="item" style="cursor:pointer;"><input type="checkbox" class="dfilter" value="${(d.name||'').replace(/"/g,'&quot;')}" ${DEPTSEL.has(d.name)?'checked':''}/> ${d.name||''}</label>`).join('')
-    + (DEPTSEL.size ? ' <button class="btn sm" id="dfClear" style="padding:2px 8px;">清除</button>' : '');
-  bar.querySelectorAll('.dfilter').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); render(LAST); });
-  const dfc = document.getElementById('dfClear'); if (dfc) dfc.onclick=()=>{ DEPTSEL.clear(); render(LAST); };
+  const escq = (s)=>(s||'').replace(/"/g,'&quot;');
+  if (deptMobile.matches){
+    const n = DEPTSEL.size;
+    const lab = n===0 ? '全部' : (n<=2 ? [...DEPTSEL].join('、') : `已選 ${n} 個`);
+    const boxes = allDepts.map(d=>
+      `<label><input type="checkbox" class="dfilter" value="${escq(d.name)}" ${DEPTSEL.has(d.name)?'checked':''}/> ${d.name||''}</label>`).join('');
+    bar.innerHTML = '<span class="muted">部門：</span>'
+      + `<div class="deptdrop" id="deptDrop">`
+      + `<button class="btn sm deptbtn" id="deptBtn" aria-expanded="${deptMenuOpen}">${lab} <span class="caret">▾</span></button>`
+      + `<div class="deptmenu" id="deptMenu"${deptMenuOpen?'':' hidden'}>${boxes}`
+      + `<div class="foot"><button class="btn sm" id="dfClear">清除</button><button class="btn sm today-btn" id="dfClose">完成</button></div>`
+      + `</div></div>`;
+    const dbtn = document.getElementById('deptBtn');
+    const dmenu = document.getElementById('deptMenu');
+    dbtn.onclick = (e)=>{ e.stopPropagation(); deptMenuOpen = !deptMenuOpen; dmenu.hidden = !deptMenuOpen; dbtn.setAttribute('aria-expanded', deptMenuOpen); };
+    const dfx = document.getElementById('dfClose'); if (dfx) dfx.onclick = ()=>{ deptMenuOpen=false; dmenu.hidden=true; dbtn.setAttribute('aria-expanded','false'); };
+  } else {
+    bar.innerHTML = '<span class="muted">部門：</span>' + allDepts.map(d=>
+      `<label class="item" style="cursor:pointer;"><input type="checkbox" class="dfilter" value="${escq(d.name)}" ${DEPTSEL.has(d.name)?'checked':''}/> ${d.name||''}</label>`).join('')
+      + (DEPTSEL.size ? ' <button class="btn sm" id="dfClear" style="padding:2px 8px;">清除</button>' : '');
+  }
+  bar.querySelectorAll('.dfilter').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); if (deptMobile.matches) deptMenuOpen = true; render(LAST); });
+  const dfc = document.getElementById('dfClear'); if (dfc) dfc.onclick=()=>{ DEPTSEL.clear(); if (deptMobile.matches) deptMenuOpen = true; render(LAST); };
 
   // 內容（依部門分組）。同時建立 EMP 索引供編輯/警示使用。
   HOLIDAYS = holidays;
