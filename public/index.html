@@ -476,7 +476,7 @@ function attachDrag(){
 }
 async function reorderEmp(draggedId, targetId){
   const dk = EMP_DEPT[draggedId];
-  if (dk == null || dk !== EMP_DEPT[targetId]) { alert('只能在同一部門內調整順序'); return; }
+  if (dk == null || dk !== EMP_DEPT[targetId]) { App.toast('只能在同一部門內調整順序','err'); return; }
   const arr = (DEPT_MEMBERS[dk] || []).slice();
   const from = arr.indexOf(draggedId); if (from < 0) return;
   arr.splice(from, 1);
@@ -485,33 +485,52 @@ async function reorderEmp(draggedId, targetId){
   for (let i = 0; i < arr.length; i += 10){
     await Promise.all(arr.slice(i, i+10).map((id, j)=> App.adminApi(`/api/admin/employees/${id}`, { method:'PUT', body: JSON.stringify({ sort_order: (i + j + 1) * 10 }) })));
   }
-  load();
+  load(true);
 }
 function periodToSlot(p){ return p === 'morning' ? 'am' : p === 'afternoon' ? 'pm' : 'full'; }
 function onCell(empId, date){
   const emp = EMP[empId]; if (!emp) return;
   const slots = emp.leaves && emp.leaves[date];
   if (rangeMode){
-    if (!selType){ alert('請先選擇假別'); return; }
+    if (!selType){ App.toast('請先選擇假別','err'); return; }
     if (!rangeStart || rangeEmp !== empId){ rangeEmp = empId; rangeStart = date; render(LAST); return; }
     const a = rangeStart < date ? rangeStart : date, b = rangeStart < date ? date : rangeStart;
     const who = rangeEmp; rangeStart = null; rangeEmp = null;
     fillRangeRow(who, a, b, selType);
     return;
   }
-  if (!selType){ if (slots) return; alert('請先從上方「選擇假別」'); return; } // 已有假→不提示,雙擊取消
+  if (!selType){ if (slots) return; App.toast('請先從上方「選擇假別」','err'); return; } // 已有假→不提示,雙擊取消
   const slot = periodToSlot(periodOfType(selType));
   if (slots && slots[slot]) return; // 該時段已有 → 不重複填(取消請雙擊)
   fillCell(empId, date, selType);
 }
-function onCellDbl(empId, date, ev){
+// 三選一對話框（系統樣式、置中），回傳所按按鈕的 value；點背景＝null
+function confirmChoice(message, buttons){
+  return new Promise(resolve=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'modal-scrim';
+    wrap.innerHTML = `<div class="modal"><h3>確認</h3>`
+      + `<p style="margin:0 0 16px;white-space:pre-wrap;line-height:1.6;">${App.esc(message)}</p>`
+      + `<div class="actions">${buttons.map((b,i)=>`<button class="btn ${b.danger?'danger':(b.primary?'primary':'')}" data-i="${i}">${App.esc(b.label)}</button>`).join('')}</div></div>`;
+    document.body.appendChild(wrap);
+    const done = (v)=>{ wrap.remove(); resolve(v); };
+    wrap.querySelectorAll('button[data-i]').forEach(btn=>btn.onclick=()=>done(buttons[+btn.dataset.i].value));
+    wrap.onclick = (e)=>{ if (e.target===wrap) done(null); };
+  });
+}
+async function onCellDbl(empId, date, ev){
   const emp = EMP[empId]; const slots = emp && emp.leaves && emp.leaves[date]; if (!slots) return;
   if (slots.full && periodOf(slots.full.label) === 'full'){
     const run = buildRun(empId, date);
     if (run){
-      const whole = confirm(`這是一段連續 ${run.length} 天的假。\n\n按「確定」＝刪整段 ${run.length} 天；按「取消」＝只刪這一天。`);
-      delByDate(empId, whole ? run : [date]);
-    } else if (confirm('取消這格的請假？')) {
+      const v = await confirmChoice(`這是一段連續 ${run.length} 天的假，要怎麼取消？`, [
+        { label:`刪整段 ${run.length} 天`, value:'whole', danger:true },
+        { label:'只刪這一天', value:'one' },
+        { label:'保留', value:null },
+      ]);
+      if (v==='whole') delByDate(empId, run);
+      else if (v==='one') delByDate(empId, [date]);
+    } else if (await App.confirm('取消這格的請假？', { title:'取消請假', danger:true })) {
       delByDate(empId, [date]);
     }
     return;
@@ -526,8 +545,8 @@ function onCellDbl(empId, date, ev){
   if (topHalf && am) period = 'morning';
   else if (!topHalf && pm) period = 'afternoon';
   else period = slots.am ? 'morning' : slots.pm ? 'afternoon' : null;
-  if (!period){ if (confirm('取消這格的請假？')) delByDate(empId, [date]); return; }
-  if (confirm(`取消這天的${period==='morning'?'上午':'下午'}休假？`)) delByDate(empId, [date], period);
+  if (!period){ if (await App.confirm('取消這格的請假？', { title:'取消請假', danger:true })) delByDate(empId, [date]); return; }
+  if (await App.confirm(`取消這天的${period==='morning'?'上午':'下午'}休假？`, { title:'取消半天假', danger:true })) delByDate(empId, [date], period);
 }
 function buildRun(empId, date){
   const lv = EMP[empId].leaves; const here = lv[date]; if (!here || !here.full) return null;
@@ -554,17 +573,17 @@ async function warnFor(empId, dates, type){
 }
 async function fillCell(empId, date, type){
   const w = await warnFor(empId, [date], type);
-  if (w.length && !confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要請假嗎？')) return;
+  if (w.length && !(await App.confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要請假嗎？', { title:'請假提醒', okText:'仍要請假' }))) return;
   const r = await App.adminApi('/api/admin/leaves', { method:'POST', body: JSON.stringify({ employee_id: empId, date, leave_type_id: type, period: periodOfType(type) }) });
-  if (!r.ok){ alert('填入失敗（需管理員權限）'); return; }
-  load();
+  if (!r.ok){ App.toast('填入失敗（需管理員權限）','err'); return; }
+  load(true);
 }
 async function delByDate(empId, dates, period){
   const body = { employee_id: empId, dates };
   if (period) body.period = period;
   const r = await App.adminApi('/api/admin/leaves/delete-by-date', { method:'POST', body: JSON.stringify(body) });
-  if (!r.ok){ alert('刪除失敗'); return; }
-  load();
+  if (!r.ok){ App.toast('刪除失敗','err'); return; }
+  load(true);
 }
 async function fillRangeRow(empId, a, b, type){
   const biz = isBizType(type); const items = [];
@@ -574,12 +593,12 @@ async function fillRangeRow(empId, a, b, type){
     if (!biz && (dow===0 || dow===6 || HOLIDAYS.has(date))) continue;
     items.push({ date, leave_type_id: type, period: periodOfType(type) });
   }
-  if (!items.length){ alert('此區間內沒有可請假的日子（週末/假日已略過）。'); render(LAST); return; }
+  if (!items.length){ App.toast('此區間內沒有可請假的日子（週末/假日已略過）','err'); render(LAST); return; }
   const w = await warnFor(empId, items.map(i=>i.date), type);
-  if (w.length && !confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要送出區間請假嗎？')){ render(LAST); return; }
+  if (w.length && !(await App.confirm(`${EMP[empId].name}：\n` + w.join('\n') + '\n\n仍要送出區間請假嗎？', { title:'區間請假提醒', okText:'仍要送出' }))){ render(LAST); return; }
   const r = await App.adminApi('/api/admin/leaves/bulk', { method:'POST', body: JSON.stringify({ employee_id: empId, items }) });
-  if (!r.ok){ alert('區間請假失敗'); return; }
-  load();
+  if (!r.ok){ App.toast('區間請假失敗','err'); return; }
+  load(true);
 }
 
 let LAST = null; // 最近一次 render 用的資料（區間高亮重繪用）
@@ -587,12 +606,16 @@ let LAST = null; // 最近一次 render 用的資料（區間高亮重繪用）
 // 身分判定完成後重繪一次（補上本人列黃底/管理元素）
 document.addEventListener('app:ready', ()=>{ if (LAST) render(LAST); });
 
-async function load(){
+async function load(silent){
   const status = document.getElementById('status');
-  status.className = 'status';
-  status.textContent = '載入中…';
-  status.style.display = '';
-  document.getElementById('table').style.display = 'none';
+  const sc = document.querySelector('.scroll');
+  const keepL = sc ? sc.scrollLeft : 0, keepT = sc ? sc.scrollTop : 0;
+  if (!silent){
+    status.className = 'status';
+    status.textContent = '載入中…';
+    status.style.display = '';
+    document.getElementById('table').style.display = 'none';
+  }
   await initEditing();
   try {
     const res = await fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
@@ -618,7 +641,9 @@ async function load(){
         foot.textContent = foot.textContent ? `${foot.textContent}　|　${dpcTxt}` : dpcTxt;
       }
     }
+    if (silent && sc){ sc.scrollLeft = keepL; sc.scrollTop = keepT; }
   } catch (e) {
+    if (silent){ App.toast('更新顯示失敗，請重新整理','err'); return; }
     status.className = 'status err';
     status.textContent = `讀取資料失敗：${e.message}（API：${API_BASE}/api/calendar）`;
   }
