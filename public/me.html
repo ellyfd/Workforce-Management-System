@@ -310,14 +310,16 @@ function setSelType(v){
 }
 
 // 第一次登入的互動式教學：聚光燈逐步介紹「① 選假別 → ② 點日期 → 取消」
+// 步驟同時是「說明」的文字來源（showCalendar 會列出文字版），改這裡兩邊一起更新。
 const TOUR_KEY = 'dev_me_tour_done';
+const TOUR_STEPS = [
+  { sel:'#brushRow', title:'① 選假別', body:'先點一個假別當「筆刷」（電腦是色塊、手機是下拉選單）。' },
+  { sel:'.cal', title:'② 點日期填入', body:'點日曆上的日期，就會填入剛剛選的假別。' },
+  { sel:'.cal', title:'取消請假', body:'雙擊已填入的格子，確認後即可取消。' },
+  { sel:'#rangeBtn', title:'區間請假', body:'想一次填一整段，先按「區間」再點起訖兩天。' },
+];
 function startTour(){
-  const steps = [
-    { sel:'#brushRow', title:'① 選假別', body:'先點一個假別當「筆刷」（電腦是色塊、手機是下拉選單）。' },
-    { sel:'.cal', title:'② 點日期填入', body:'點日曆上的日期，就會填入剛剛選的假別。' },
-    { sel:'.cal', title:'取消請假', body:'雙擊已填入的格子，確認後即可取消。' },
-    { sel:'#rangeBtn', title:'區間請假', body:'想一次填一整段，先按「區間」再點起訖兩天。' },
-  ];
+  const steps = TOUR_STEPS;
   if (document.querySelector('.tour-mask')) return; // 避免重複開啟
   let i = 0;
   const mask = document.createElement('div'); mask.className = 'tour-mask';
@@ -367,8 +369,6 @@ function showCalendar(){
   const opts = leaveTypes.map(t => `<option value="${t.id}"${t.id===selType?' selected':''}>${t.name}</option>`).join('');
   // 桌機用色票 chip 當「筆刷」，選中的高亮；手機沿用下拉
   const chips = leaveTypes.map(t => `<button class="lchip${t.id===selType?' on':''}" data-t="${t.id}" style="--c:${t.color||'#64748b'}">${t.short_name||t.name}</button>`).join('');
-  // 假別圖例
-  const legend = leaveTypes.map(t=>`<span class="sumitem"><span class="dot" style="background:${t.color||'#64748b'}"></span>${t.short_name||t.name} = ${t.name}</span>`).join('');
   const { calHtml, summaryHtml, rangeHtml } = buildMonth();
 
   app.innerHTML = `
@@ -397,14 +397,11 @@ function showCalendar(){
     </div>
     <div class="card" style="margin-top:12px;">
       <details>
-        <summary style="cursor:pointer;font-weight:600;">說明與假別圖例</summary>
+        <summary style="cursor:pointer;font-weight:600;">操作說明</summary>
         <ul class="muted" style="margin:10px 0;padding-left:18px;line-height:1.7;font-size:14px;">
-          <li><b>區間請假</b>：選好假別後點「區間」，依序點起始日與結束日，整段一次填入。</li>
-          <li><b>半天假</b>：選「下午休 / 上午休」會以半格顯示、自動計 0.5 天。</li>
+          ${TOUR_STEPS.map(s=>`<li><b>${s.title}</b>：${s.body}</li>`).join('')}
         </ul>
-        <div style="font-weight:600;margin:6px 0;">假別圖例</div>
-        <div class="summary">${legend}</div>
-        <button class="btn sm" id="replayTour" style="margin-top:12px;">▶ 重看操作教學</button>
+        <button class="btn sm" id="replayTour">▶ 重看操作教學</button>
       </details>
     </div>`;
 
