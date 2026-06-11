@@ -741,30 +741,44 @@ async function buildLeaveCheck(env, empId, dates) {
   const deputies = [emp.deputy_1, emp.deputy_2].filter(Boolean);
 
   const ph = dates.map(() => '?').join(',');
-  const recs = await env.DB.prepare(`SELECT DISTINCT employee_id, date FROM leave_records WHERE date IN (${ph})`).bind(...dates).all();
+  const [recs, types] = await Promise.all([
+    env.DB.prepare(`SELECT employee_id, date, leave_type_id FROM leave_records WHERE date IN (${ph})`).bind(...dates).all(),
+    env.DB.prepare('SELECT id, name, short_name FROM leave_types').all(),
+  ]);
+  const typeById = Object.fromEntries(types.results.map((t) => [t.id, t]));
+  const isBiz = (tid) => { const t = typeById[tid]; return /差/.test(t ? (t.short_name || t.name || '') : ''); };
+  // 每日每人：true=有非出差的請假、false=當天只有出差
   const byDate = {};
-  for (const r of recs.results) (byDate[r.date] ||= new Set()).add(r.employee_id);
+  for (const r of recs.results) {
+    const m = (byDate[r.date] ||= new Map());
+    m.set(r.employee_id, m.get(r.employee_id) || !isBiz(r.leave_type_id));
+  }
 
   const results = {};
   for (const d of dates) {
-    const onLeave = byDate[d] || new Set();
-    const dep = deputies.filter((id) => id !== empId && onLeave.has(id)).map((id) => nameById[id] || '職代');
-    const deptCount = [...onLeave].filter((id) => id !== empId && deptMemberIds.has(id)).length;
-    results[d] = { deputies: dep, dept_count: deptCount, over: threshold > 0 && deptCount >= threshold };
+    const onLeave = byDate[d] || new Map();
+    const dep = [], depBiz = [];
+    for (const id of deputies) {
+      if (id === empId || !onLeave.has(id)) continue;
+      (onLeave.get(id) ? dep : depBiz).push(nameById[id] || '職代');
+    }
+    const deptCount = [...onLeave.keys()].filter((id) => id !== empId && deptMemberIds.has(id)).length;
+    results[d] = { deputies: dep, deputies_biz: depBiz, dept_count: deptCount, over: threshold > 0 && deptCount >= threshold };
   }
   return { threshold, dept_size: deptMemberIds.size, results };
 }
 
 async function buildDashboard(env, date, deptParam) {
   const deptIds = (deptParam || '').split(',').filter(Boolean);
-  // 連未來 6 天一起撈（七日展望用）；當日邏輯只用 date 當天那批
-  const endDate = addDays(date, 6);
+  // 週覽用：連選定日「當週」（週一～週日）一起撈；當日邏輯只用 date 當天那批
+  const weekStart = addDays(date, -((new Date(date + 'T00:00:00').getDay() + 6) % 7));
+  const endDate = addDays(weekStart, 6);
   const [emps, depts, types, recsRange, hols] = await Promise.all([
     env.DB.prepare("SELECT id, name, english_name, department_ids, deputy_1, deputy_2 FROM employees WHERE status = 'active'").all(),
     env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
     env.DB.prepare('SELECT * FROM leave_types').all(),
-    env.DB.prepare('SELECT * FROM leave_records WHERE date >= ? AND date <= ?').bind(date, endDate).all(),
-    env.DB.prepare('SELECT date FROM holidays WHERE date >= ? AND date <= ?').bind(date, endDate).all(),
+    env.DB.prepare('SELECT * FROM leave_records WHERE date >= ? AND date <= ?').bind(weekStart, endDate).all(),
+    env.DB.prepare('SELECT date FROM holidays WHERE date >= ? AND date <= ?').bind(weekStart, endDate).all(),
   ]);
   const holSet = new Set(hols.results.map((h) => h.date));
   const recs = { results: recsRange.results.filter((r) => r.date === date) };
@@ -814,8 +828,13 @@ async function buildDashboard(env, date, deptParam) {
     const myLeaves = leavesByEmp[e.id]; if (!myLeaves) continue;
     if (myLeaves.every((r) => isBiz(r.leave_type_id))) continue; // 全是出差→略過
     const reasons = [];
-    const deps = [e.deputy_1, e.deputy_2].filter(Boolean).filter((id) => onLeaveAll.has(id) && (leavesByEmp[id] || []).some((r) => !isBiz(r.leave_type_id)));
-    if (deps.length) reasons.push(`職代 ${deps.map((id) => (empByIdAll[id] || {}).name || '?').join('、')} 當天也請假`);
+    // 職代不在位：請假與出差分開描述（出差也算不在，僅措辭不同）
+    const depAway = [e.deputy_1, e.deputy_2].filter(Boolean).filter((id) => onLeaveAll.has(id));
+    const depLeave = depAway.filter((id) => (leavesByEmp[id] || []).some((r) => !isBiz(r.leave_type_id)));
+    const depBiz = depAway.filter((id) => !depLeave.includes(id));
+    const depName = (id) => (empByIdAll[id] || {}).name || '?';
+    if (depLeave.length) reasons.push(`職代 ${depLeave.map(depName).join('、')} 當天也請假`);
+    if (depBiz.length) reasons.push(`職代 ${depBiz.map(depName).join('、')} 當天出差`);
     for (const d of safeIds(e.department_ids)) {
       const lim = Math.floor((deptActive[d] || 0) / 3);
       const cnt = (deptOnLeave[d] || new Set()).size;
@@ -839,10 +858,10 @@ async function buildDashboard(env, date, deptParam) {
       return { id: d.id, name: d.name, active, on_leave: cnt, limit: lim, over: lim > 0 && cnt >= lim };
     });
 
-  // 七日展望：自選定日起 7 天，每天的請假人數（套用部門篩選）與達 1/3 上限的部門
+  // 當週概覽：選定日所在週（週一～週日），每天的請假人數（套用部門篩選）與達 1/3 上限的部門
   const outlook = [];
   for (let i = 0; i < 7; i++) {
-    const dStr = addDays(date, i);
+    const dStr = addDays(weekStart, i);
     const dayIds = new Set(recsRange.results.filter((r) => r.date === dStr).map((r) => r.employee_id));
     const dayByDept = {};
     for (const id of dayIds) {
