@@ -655,11 +655,13 @@ async function syncFromBase44(env) {
   const stmts = [];
 
   // 1) DPC 部門（upsert）
+  //    sort_order 不從 Base44 同步——部門排序由人員管理頁手動維護，
+  //    僅在首次建立時給預設值，之後同步不再覆蓋。
   stmts.push(
     env.DB.prepare(
       'INSERT INTO departments (id,name,sort_order,status) VALUES (?,?,?,?) ' +
-        'ON CONFLICT(id) DO UPDATE SET name=excluded.name, sort_order=excluded.sort_order, status=excluded.status',
-    ).bind(D1_DPC_DEPT, displayName, dpcDept.sort_order ?? 10, 'active'),
+        'ON CONFLICT(id) DO UPDATE SET name=excluded.name, status=excluded.status',
+    ).bind(D1_DPC_DEPT, displayName, 10, 'active'),
   );
 
   // 假別與假日「不同步」：略過，保留休假設定頁手動維護的內容。
