@@ -12,6 +12,13 @@
   .acts{ white-space:nowrap; text-align:right; }
   .acts .iconbtn{ font-size:18px; line-height:1; }
   .acts .iconbtn.del:hover{ background:#fee2e2; }
+  /* 拖曳排序握把 + 順序編號（與部門管理一致） */
+  .ord{ white-space:nowrap; }
+  .ord .grip{ cursor:grab; color:var(--muted); user-select:none; touch-action:none; font-size:16px; margin-right:6px; }
+  .ord .ordn{ color:var(--muted); font-variant-numeric:tabular-nums; }
+  .ltrow.dragging{ opacity:.55; background:#eff6ff; }
+  /* 計入天數可直接在表格輸入 */
+  input.dayv{ width:72px; padding:5px 8px; text-align:right; }
   .short{ display:none; }
   @media (max-width:560px){
     .full{ display:none; } .short{ display:inline; }
@@ -51,13 +58,13 @@ async function loadTypes(){
   return true;
 }
 function renderLt(){
-  const rows = types.map(t=>`
-    <tr>
+  const rows = types.map((t,i)=>`
+    <tr class="ltrow" data-id="${esc(t.id)}">
+      <td class="ord"><span class="grip" title="拖曳調整順序">⋮⋮</span><span class="ordn">${i+1}</span></td>
       <td><span class="swatch" style="background:${esc(t.color||'#64748b')}"></span></td>
       <td><b>${esc(t.name)}</b></td>
       <td><span class="chip" style="background:${esc(t.color||'#64748b')}">${esc(t.short_name||t.name)}</span></td>
-      <td>${Number(t.day_value)||0 ? `<b>${Number(t.day_value)}</b> 天` : '<span class="muted">不計</span>'}</td>
-      <td>${t.sort_order??0}</td>
+      <td><input type="number" step="0.5" min="0" class="dayv" data-id="${esc(t.id)}" value="${Number(t.day_value)||0}" title="計入天數" aria-label="計入天數" /> <span class="muted">天</span></td>
       <td class="acts"><button class="iconbtn" data-edit="${esc(t.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-del="${esc(t.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
     </tr>`).join('');
   document.getElementById('panel').innerHTML = `
@@ -67,14 +74,70 @@ function renderLt(){
         <button class="btn primary" id="add"><span class="full">＋ 新增假別</span><span class="short">＋</span></button>
       </div>
       <div class="table-wrap"><table class="data">
-        <thead><tr><th>顏色</th><th>名稱</th><th>簡稱</th><th>計入天數</th><th>排序</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="6" class="empty">尚無假別</td></tr>'}</tbody>
+        <thead><tr><th>順序</th><th>顏色</th><th>名稱</th><th>簡稱</th><th>計入天數</th><th></th></tr></thead>
+        <tbody id="ltBody">${rows||'<tr><td colspan="6" class="empty">尚無假別</td></tr>'}</tbody>
       </table></div>
-      <div class="muted" style="margin-top:8px;">「計入天數」＝排休表「累計」欄每填一格累加的天數（例：休=1、午休/早休=0.5、出差=不計）。</div>
+      <div class="muted" style="margin-top:8px;">拖曳左側握把 ⋮⋮ 可調整順序，放開後自動儲存；「計入天數」可直接於欄位輸入（休=1、午休/早休=0.5、出差=0 不計）。</div>
     </div>`;
   document.getElementById('add').onclick = ()=>ltForm();
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>ltForm(types.find(x=>x.id===b.dataset.edit)));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delLt(b.dataset.del));
+  document.querySelectorAll('input.dayv').forEach(inp=>{ inp.onchange=()=>saveDayValue(inp); });
+  attachLtDrag();
+}
+
+// 計入天數：直接在表格輸入，失焦/變更即儲存
+async function saveDayValue(inp){
+  const id = inp.dataset.id;
+  const t = types.find(x=>x.id===id);
+  const v = Number(inp.value);
+  if (Number.isNaN(v) || v < 0){ App.toast('計入天數請輸入 0 以上的數字','err'); inp.value = Number(t&&t.day_value)||0; return; }
+  const res = await App.adminApi(`/api/admin/leave-types/${id}`,{method:'PUT',body:JSON.stringify({day_value:v})});
+  if (!res.ok){ App.toast('儲存失敗','err'); inp.value = Number(t&&t.day_value)||0; return; }
+  if (t) t.day_value = v;
+  App.toast('已更新計入天數','ok');
+}
+
+// 拖曳排序（pointer 事件，滑鼠與觸控通用）：放開後依新順序重設 sort_order
+function attachLtDrag(){
+  const tbody = document.getElementById('ltBody');
+  if (!tbody) return;
+  const rowsOf = ()=>[...tbody.querySelectorAll('tr.ltrow')];
+  tbody.querySelectorAll('.grip').forEach(grip=>{
+    grip.onpointerdown = (e)=>{
+      e.preventDefault();
+      const tr = grip.closest('tr.ltrow');
+      tr.classList.add('dragging');
+      const move = (ev)=>{
+        const y = ev.clientY;
+        for (const r of rowsOf()){
+          if (r===tr) continue;
+          const rect = r.getBoundingClientRect();
+          if (y >= rect.top && y <= rect.bottom){
+            tbody.insertBefore(tr, (y > rect.top + rect.height/2) ? r.nextSibling : r);
+            break;
+          }
+        }
+      };
+      const up = async ()=>{
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        tr.classList.remove('dragging');
+        const ids = rowsOf().map(r=>r.dataset.id);
+        if (ids.join(',') !== types.map(t=>t.id).join(',')) await persistLtOrder(ids);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    };
+  });
+}
+async function persistLtOrder(ids){
+  const byId = Object.fromEntries(types.map(t=>[t.id,t]));
+  types = ids.map((id,i)=>{ const t = byId[id]; t.sort_order = (i+1)*10; return t; });
+  renderLt(); // 立即反映新順序與編號
+  const res = await Promise.all(types.map(t=>App.adminApi(`/api/admin/leave-types/${t.id}`,{method:'PUT',body:JSON.stringify({sort_order:t.sort_order})})));
+  if (res.every(r=>r.ok)) App.toast('假別順序已更新','ok');
+  else { App.toast('部分順序儲存失敗','err'); await loadTypes(); renderLt(); }
 }
 function ltForm(t){
   const cur = t || { name:'', short_name:'', color:'#22c55e', sort_order:(types.length+1)*10, day_value:1 };
@@ -82,14 +145,14 @@ function ltForm(t){
     <div class="field"><label>名稱</label><input id="l_name" value="${esc(cur.name)}" /></div>
     <div class="field"><label>簡稱（表格上顯示）</label><input id="l_short" value="${esc(cur.short_name||'')}" maxlength="4" /></div>
     <div class="row"><div class="field"><label>顏色</label><input id="l_color" type="color" value="${esc(cur.color||'#22c55e')}" /></div>
-    <div class="field" style="flex:1;"><label>排序</label><input id="l_sort" type="number" value="${cur.sort_order??0}" /></div></div>
-    <div class="field"><label>計入天數（累計欄每格累加；1＝一天、0.5＝半天、0＝不計）</label><input id="l_dayv" type="number" step="0.5" min="0" value="${Number(cur.day_value)||0}" /></div>
+    <div class="field" style="flex:1;"><label>計入天數（1＝一天、0.5＝半天、0＝不計）</label><input id="l_dayv" type="number" step="0.5" min="0" value="${Number(cur.day_value)||0}" /></div></div>
+    <div class="muted" style="font-size:14px;">新增後可在列表用拖曳調整順序、直接修改計入天數。</div>
   `, async ()=>{
     const name = document.getElementById('l_name').value.trim();
     if (!name){ App.toast('請輸入名稱','err'); return false; }
     const dayv = Number(document.getElementById('l_dayv').value);
     if (Number.isNaN(dayv) || dayv < 0){ App.toast('計入天數請輸入 0 以上的數字','err'); return false; }
-    const body = { name, short_name: document.getElementById('l_short').value.trim()||name, color: document.getElementById('l_color').value, sort_order: Number(document.getElementById('l_sort').value)||0, day_value: dayv };
+    const body = { name, short_name: document.getElementById('l_short').value.trim()||name, color: document.getElementById('l_color').value, sort_order: cur.sort_order??0, day_value: dayv };
     const res = t ? await App.adminApi(`/api/admin/leave-types/${t.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/leave-types',{method:'POST',body:JSON.stringify(body)});
     if (!res.ok){ App.toast('儲存失敗','err'); return false; }

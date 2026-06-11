@@ -34,10 +34,7 @@
 
   <div class="datebar">
     <button class="btn sm" id="prev" aria-label="前一天">‹</button>
-    <div class="datewrap">
-      <span class="dlabel" id="dateText"></span>
-      <input type="date" id="date" aria-label="選擇日期" />
-    </div>
+    <input type="date" id="date" class="dlabel" aria-label="選擇日期" />
     <button class="btn sm" id="next" aria-label="後一天">›</button>
     <button class="btn sm" id="today">今天</button>
   </div>
@@ -69,7 +66,6 @@ document.addEventListener('click', (e)=>{
 
 function pad(n){ return String(n).padStart(2,'0'); }
 function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
-function dateText(d){ return `${d.getFullYear()}年${pad(d.getMonth()+1)}月${pad(d.getDate())}日（${'日一二三四五六'[d.getDay()]}）`; }
 function greetWord(){ const h = new Date().getHours(); return h < 11 ? '早安' : h < 18 ? '午安' : '晚安'; }
 function deptName(id){ const d = DEPTS.find(x=>String(x.id)===String(id)); return d ? d.name : ''; }
 
@@ -110,7 +106,6 @@ async function boot(){
 
 async function load(){
   document.getElementById('date').value = ymd(cur);
-  document.getElementById('dateText').textContent = dateText(cur);
   const c = document.getElementById('content');
   c.innerHTML = '<div class="status">載入中…</div>';
   try {
@@ -134,7 +129,7 @@ function render(s){
     ? list.map(p=>`<div class="leave-item">
         <div><div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>${p.department?`<div class="dp">${esc(p.department)}</div>`:''}</div>
         <div class="sp"></div>
-        <span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'?`・${PERIOD[p.period]||''}`:''}</span>
+        <span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'&&!/[早午]/.test(p.label)?`・${PERIOD[p.period]||''}`:''}</span>
       </div>`).join('')
     : '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
 
