@@ -114,7 +114,9 @@
     height: 100%; border-radius: 6px; font-size:12px; font-weight: 500; color: #fff;
     white-space: nowrap; overflow: hidden; letter-spacing: 0;
   }
-  td.day.half { display: flex; flex-direction: column; gap: 1px; }
+  /* 半天用內層 .hw 做上下分槽，避免在 <td> 直接 display:flex
+     （那會讓格子脫離表格列高模型，整列在 Safari 變高 → 對不齊）。 */
+  td.day.half .hw { display: flex; flex-direction: column; gap: 1px; height: 100%; }
   td.day.half .chip { height: calc(50% - 1px); font-size:11px; line-height:1; padding:0; }
   td.day.half .chip.am { margin-bottom: auto; }
   td.day.half .chip.pm { margin-top: auto; }
@@ -312,7 +314,7 @@ function cellHTML(slots, cls, empAttr, date){
     let inner = '';
     if (slots.am) inner += `<div class="chip am" style="background:${slots.am.color}">${slots.am.label}</div>`;
     if (slots.pm) inner += `<div class="chip pm" style="background:${slots.pm.color}">${slots.pm.label}</div>`;
-    return `<td class="${cls} half"${empAttr} data-date="${date}">${inner}</td>`;
+    return `<td class="${cls} half"${empAttr} data-date="${date}"><div class="hw">${inner}</div></td>`;
   }
   return `<td class="${cls}"${empAttr} data-date="${date}"></td>`;
 }
