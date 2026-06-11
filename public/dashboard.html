@@ -22,6 +22,9 @@
   .leave-item .sp{ flex:1; }
   .typewrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .lgwarn{ color:#b45309; font-size:12px; line-height:1.5; margin:0 0 4px; padding:0 8px; }
+  .grpsel{ padding:4px 8px; font-size:13px; border-radius:8px; }
+  .warn-below{ color:var(--muted); font-size:13px; line-height:1.6; }
+  .warn-below .wl{ color:#b45309; }
   .nwk{ display:inline-block; background:#f3f4f6; color:var(--muted); font-size:14px; border-radius:6px; padding:1px 8px; margin-left:8px; }
 </style>
 </head>
@@ -50,6 +53,7 @@ const PERIOD = { full:'整天', morning:'上午', afternoon:'下午' };
 let cur = new Date();
 let DEPTSEL = new Set();
 let me = null;
+let groupMode = localStorage.getItem('dash_group') || 'none'; // 休假人員分組：none / dept / type
 
 // 部門篩選：桌機行內多選；手機收合為下拉
 let DEPTS = [];
@@ -125,18 +129,15 @@ function render(s){
 
   const list = s.on_leave_list || [];
   const chip = (p)=>`<span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'&&!/[早午]/.test(p.label)?`・${PERIOD[p.period]||''}`:''}</span>`;
-  // 依部門分組（部門首次出現的次序），組內成員不再重複寫部門
-  const groups = [];
-  const gmap = new Map();
-  list.forEach(p=>{
-    const key = p.department || '未分部門';
-    let g = gmap.get(key);
-    if (!g){ g = { dept:key, items:[] }; gmap.set(key, g); groups.push(g); }
-    g.items.push(p);
-  });
+  // 一筆休假人員的列（withDept：是否在名字下方補上部門小字）
+  const item = (p,withDept)=>`<div class="leave-item">
+    <div><div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>${withDept&&p.department?`<div class="dp">${esc(p.department)}</div>`:''}</div>
+    <div class="sp"></div>
+    ${chip(p)}
+  </div>`;
 
-  // 異常請假：後端是綁在個人身上，依其部門歸到對應群組標題顯示。
-  // 部門層級原因（達 1/3 上限）整組只顯示一次；個人原因（職代衝突）才標出當事人。
+  // 異常請假：後端綁在個人身上。依部門分組時標在部門標題下（部門層級原因去重、個人原因標當事人）；
+  // 其餘模式則收在名單下方一張低調卡片。
   const warns = s.warnings || [];
   const pDept = new Map();
   list.forEach(p=>pDept.set(`${p.name}|${p.english_name||''}`, p.department||'未分部門'));
@@ -157,17 +158,32 @@ function render(s){
     return parts.length ? `<div class="lgwarn">⚠ ${parts.join('；')}</div>` : '';
   };
 
-  const listHtml = list.length
-    ? groups.map(g=>`<div class="lgroup">
-        <div class="lghead">${esc(g.dept)}<span class="muted"> ${g.items.length}</span></div>
-        ${warnHead(g.dept)}
-        ${g.items.map(p=>`<div class="leave-item">
-          <div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>
-          <div class="sp"></div>
-          ${chip(p)}
-        </div>`).join('')}
-      </div>`).join('')
-    : '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
+  // 依 key 分組，保留首次出現次序
+  const groupBy = (keyOf)=>{ const out=[]; const m=new Map(); list.forEach(p=>{ const k=keyOf(p); let g=m.get(k); if(!g){g={key:k,color:p.color,items:[]};m.set(k,g);out.push(g);} g.items.push(p); }); return out; };
+
+  let listHtml;
+  if (!list.length){
+    listHtml = '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
+  } else if (groupMode === 'dept'){
+    listHtml = groupBy(p=>p.department||'未分部門').map(g=>`<div class="lgroup">
+        <div class="lghead">${esc(g.key)}<span class="muted"> ${g.items.length}</span></div>
+        ${warnHead(g.key)}
+        ${g.items.map(p=>item(p,false)).join('')}
+      </div>`).join('');
+  } else if (groupMode === 'type'){
+    listHtml = groupBy(p=>p.label||'其他').map(g=>`<div class="lgroup">
+        <div class="lghead"><span class="chip" style="background:${esc(g.color||'#64748b')}">${esc(g.key)}</span><span class="muted"> ${g.items.length}</span></div>
+        ${g.items.map(p=>item(p,true)).join('')}
+      </div>`).join('');
+  } else {
+    listHtml = list.map(p=>item(p,true)).join('');
+  }
+
+  // 名單下方異常卡片（不分組 / 依假別 時顯示）
+  const warnBelow = (groupMode !== 'dept' && warns.length) ? `
+    <div class="card" style="margin-top:12px;">
+      <div class="warn-below"><span class="wl">異常請假 ${warns.length} 筆</span>　${warns.map(w=>`${esc(w.name)}（${w.reasons.map(esc).join('、')}）`).join('；')}</div>
+    </div>` : '';
 
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
@@ -178,11 +194,22 @@ function render(s){
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px;">
-        <b>休假人員 <span class="muted">${list.length} 人</span></b>
+        <div class="row" style="gap:8px;">
+          <b>休假人員 <span class="muted">${list.length} 人</span></b>
+          <select id="groupSel" class="grpsel" title="分組方式">
+            <option value="none">不分組</option>
+            <option value="dept">依部門</option>
+            <option value="type">依假別</option>
+          </select>
+        </div>
         ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
-    </div>`;
+    </div>
+    ${warnBelow}`;
+
+  const gs = document.getElementById('groupSel');
+  if (gs){ gs.value = groupMode; gs.onchange = ()=>{ groupMode = gs.value; localStorage.setItem('dash_group', groupMode); render(s); }; }
 
   const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
 }
