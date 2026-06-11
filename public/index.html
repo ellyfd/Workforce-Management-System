@@ -616,9 +616,11 @@ async function load(silent){
     status.style.display = '';
     document.getElementById('table').style.display = 'none';
   }
+  // 先發出行事曆請求，與 initEditing（抓假別）並行，少一趟往返
+  const pCal = fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
   await initEditing();
   try {
-    const res = await fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
+    const res = await pCal;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
