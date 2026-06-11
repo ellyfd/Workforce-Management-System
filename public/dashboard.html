@@ -13,10 +13,12 @@
   .datebar input[type=date]{ border:none; }
   .deptcard{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:12px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   .deptcard label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; cursor:pointer; }
-  .leave-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .lgroup{ margin-top:6px; }
+  .lghead{ font-size:13px; font-weight:600; color:#475569; background:#f8fafc; border-radius:6px; padding:4px 8px; margin:8px 0 2px; }
+  .leave-item{ display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid var(--border); }
   .leave-item:last-child{ border-bottom:none; }
   .leave-item .nm{ font-weight:600; }
-  .leave-item .dp{ color:var(--muted); font-size:14px; }
+  .leave-item .dp{ color:var(--muted); font-size:14px; font-weight:400; }
   .leave-item .sp{ flex:1; }
   .typewrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   .warn-note{ color:var(--muted); font-size:13px; margin-top:10px; line-height:1.6; }
@@ -123,17 +125,32 @@ function render(s){
     : '<div class="val" style="font-size:16px;color:var(--muted);margin-top:8px;">無請假</div>';
 
   const list = s.on_leave_list || [];
+  const chip = (p)=>`<span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'&&!/[早午]/.test(p.label)?`・${PERIOD[p.period]||''}`:''}</span>`;
+  // 依部門分組（部門首次出現的次序），組內成員不再重複寫部門
+  const groups = [];
+  const gmap = new Map();
+  list.forEach(p=>{
+    const key = p.department || '未分部門';
+    let g = gmap.get(key);
+    if (!g){ g = { dept:key, items:[] }; gmap.set(key, g); groups.push(g); }
+    g.items.push(p);
+  });
   const listHtml = list.length
-    ? list.map(p=>`<div class="leave-item">
-        <div><div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>${p.department?`<div class="dp">${esc(p.department)}</div>`:''}</div>
-        <div class="sp"></div>
-        <span class="chip" style="background:${esc(p.color||'#64748b')}">${esc(p.label)}${p.period&&p.period!=='full'&&!/[早午]/.test(p.label)?`・${PERIOD[p.period]||''}`:''}</span>
+    ? groups.map(g=>`<div class="lgroup">
+        <div class="lghead">${esc(g.dept)}<span class="muted"> ${g.items.length}</span></div>
+        ${g.items.map(p=>`<div class="leave-item">
+          <div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>
+          <div class="sp"></div>
+          ${chip(p)}
+        </div>`).join('')}
       </div>`).join('')
     : '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
 
   const warns = s.warnings || [];
-  const warnLine = warns.length ? `
-    <div class="warn-note"><span class="wl">異常請假 ${warns.length} 筆</span>　${warns.map(w=>`${esc(w.name)}（${w.reasons.map(esc).join('、')}）`).join('；')}</div>` : '';
+  const warnCard = warns.length ? `
+    <div class="card" style="margin-top:12px;">
+      <div class="warn-note"><span class="wl">異常請假 ${warns.length} 筆</span>　${warns.map(w=>`${esc(w.name)}（${w.reasons.map(esc).join('、')}）`).join('；')}</div>
+    </div>` : '';
 
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
@@ -148,8 +165,8 @@ function render(s){
         ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
-      ${warnLine}
-    </div>`;
+    </div>
+    ${warnCard}`;
 
   const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
 }
