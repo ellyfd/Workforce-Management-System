@@ -24,7 +24,7 @@
   .day .d{ font-size:14px; color:#374151; flex:none; }
   /* 假別色塊：全天＝置中色帶、半天＝只佔上半(早休)或下半(午休)。清楚分辨又不過於厚重 */
   .day .dbody{ flex:1; min-height:0; width:100%; display:flex; flex-direction:column; justify-content:center; gap:2px; margin-top:3px; }
-  .day .dbody .chip{ flex:0 0 auto; height:60%; display:flex; align-items:center; justify-content:center; width:100%; border-radius:6px; color:#fff; font-size:13px; font-weight:500; text-align:center; padding:0 2px; white-space:nowrap; overflow:hidden; }
+  .day .dbody .chip{ flex:0 0 auto; height:74%; display:flex; align-items:center; justify-content:center; width:100%; border-radius:6px; color:#fff; font-size:13px; font-weight:500; text-align:center; padding:0 2px; white-space:nowrap; overflow:hidden; }
   .day .dbody.half{ justify-content:flex-start; }
   .day .dbody.half .chip{ height:calc(50% - 1px); }
   .day .dbody.half .chip.am{ margin-bottom:auto; }
@@ -42,6 +42,10 @@
   .lchip:hover{ background:#f8fafc; }
   .lchip.on{ background:var(--c); color:#fff; }
   .lsel{ display:none; }
+  /* 目前筆刷的即時提示，引導「先選假別→再點日期」 */
+  .hint{ margin:8px 0 2px; font-size:14px; color:#374151; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .hint .dot{ width:12px; height:12px; border-radius:4px; display:inline-block; }
+  .hint .step{ color:var(--blue); font-weight:600; }
 
   /* 手機：縮小日曆格內距與字級，避免色塊溢出格子 */
   @media (max-width:560px){
@@ -277,11 +281,21 @@ function refreshMonth(){
   attachCellHandlers();
 }
 
-// 設定目前選的假別「筆刷」，同步更新 chip 高亮與下拉值（兩者共用 selType）
+// 目前筆刷的即時提示：未選→引導先選假別；已選→顯示目前假別並提示點日期、雙擊取消
+function brushHintHtml(){
+  if (!selType) return `<div class="hint" id="brushHint"><span class="step">①</span> 先選假別 <span class="step">②</span> 再點日期填入</div>`;
+  const t = leaveTypes.find(x => x.id === selType);
+  const nm = t ? t.name : '';
+  const col = t ? (t.color || '#64748b') : '#64748b';
+  return `<div class="hint" id="brushHint">目前筆刷：<span class="dot" style="background:${col}"></span><b>${nm}</b>　·　點日期填入，雙擊取消</div>`;
+}
+
+// 設定目前選的假別「筆刷」，同步更新 chip 高亮、下拉值與即時提示（共用 selType）
 function setSelType(v){
   selType = v;
   document.querySelectorAll('.lchip').forEach(c => c.classList.toggle('on', c.dataset.t === v));
   const sel = document.getElementById('ltype'); if (sel && sel.value !== v) sel.value = v;
+  const bh = document.getElementById('brushHint'); if (bh) bh.outerHTML = brushHintHtml();
 }
 
 function showCalendar(){
@@ -316,16 +330,14 @@ function showCalendar(){
         <button class="btn ${rangeMode?'primary':''}" id="rangeBtn" title="區間請假">區間</button>
       </div>
       ${rangeHtml}
+      ${brushHintHtml()}
       <div class="cal">${calHtml}</div>
-      <div class="muted" style="margin-top:10px;">填入：選假別後點日期。取消：雙擊已填入的格子。區間：按「區間」後點起訖兩天。</div>
     </div>
     <div class="card" style="margin-top:12px;">
       <details>
-        <summary style="cursor:pointer;font-weight:600;">操作說明與假別圖例</summary>
+        <summary style="cursor:pointer;font-weight:600;">說明與假別圖例</summary>
         <ul class="muted" style="margin:10px 0;padding-left:18px;line-height:1.7;font-size:14px;">
-          <li><b>填入請假</b>：先從上方「選擇假別」，再點日曆中的日期即可填入。</li>
-          <li><b>取消請假</b>：<b>雙擊</b>已填入的格子，確認後即取消。</li>
-          <li><b>區間請假</b>：選好假別後點「區間」進入區間模式，依序點起始日與結束日。</li>
+          <li><b>區間請假</b>：選好假別後點「區間」，依序點起始日與結束日，整段一次填入。</li>
           <li><b>半天假</b>：選「下午休 / 上午休」會以半格顯示、自動計 0.5 天。</li>
         </ul>
         <div style="font-weight:600;margin:6px 0;">假別圖例</div>
