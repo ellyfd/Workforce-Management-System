@@ -105,6 +105,8 @@
     background: #f8fafc; color: #475569; font-weight: 600; font-size:14px;
     padding: 5px 10px; height: 28px; border-right: none;
   }
+  /* 部門名稱固定在左側，橫向捲動時不隨欄位滑走 */
+  tr.dept td .deptlabel { position: sticky; left: 10px; display: inline-block; }
 
   /* 假別色塊：整天填滿；半天只佔一半（早休＝上半、午休＝下半），格內字較小以塞進半格 */
   .chip {
@@ -149,7 +151,6 @@
 <div class="page">
   <header class="top">
     <h1 id="title">全部排休</h1>
-    <span class="sub" id="subtitle"></span>
   </header>
 
   <div class="toolbar">
@@ -165,7 +166,7 @@
     <span class="muted">編輯：</span>
     <select id="ltype"><option value="">選擇假別…</option></select>
     <button id="rangeBtn">區間</button>
-    <span class="muted" id="editHint">選假別後點格子＝填入；雙擊格子＝取消</span>
+    <span class="muted" id="editHint"></span>
   </div>
 
   <div class="legend" id="deptbar"><span class="muted">部門：</span></div>
@@ -322,10 +323,7 @@ function render(data){
   const holidays = new Set(data.holidays || []);
   const legend = (data.legend && Object.keys(data.legend).length) ? data.legend : DEFAULT_COLORS;
   const today = todayStr();
-  const viewLabel = fullYear ? `${curYear} 全年` : `${curYear} 年 ${curMonth} 月`;
-
   document.getElementById('title').textContent = '全部排休';
-  document.getElementById('subtitle').textContent = `${data.title || '開發處休假表'}・${viewLabel}`;
   syncYmSelects();
 
   // 圖例
@@ -391,7 +389,7 @@ function render(data){
   const depts = DEPTSEL.size ? allDepts.filter(d=>DEPTSEL.has(d.name)) : allDepts;
   let anyMember = false;
   depts.forEach((dept, di)=>{
-    html += `<tr class="dept"><td colspan="${colCount}">${dept.name || ''}</td></tr>`;
+    html += `<tr class="dept"><td colspan="${colCount}"><span class="deptlabel">${dept.name || ''}</span></td></tr>`;
     DEPT_MEMBERS[di] = [];
     (dept.members || []).forEach(m=>{
       anyMember = true;
@@ -447,7 +445,7 @@ async function initEditing(){
     sel.innerHTML = '<option value="">選擇假別…</option>' + leaveTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
     sel.onchange = (e)=>{ selType = e.target.value; };
     const rb = document.getElementById('rangeBtn');
-    rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : '選假別後點格子＝填入；雙擊格子＝取消'; render(LAST); };
+    rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : ''; render(LAST); };
   }
   const table = document.getElementById('table');
   table.addEventListener('click', (e)=>{ if (!isAdmin()) return; const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
