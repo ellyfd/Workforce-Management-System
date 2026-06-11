@@ -8,9 +8,11 @@
 <style>
   .greet h1{ font-size:20px; margin:0; font-weight:600; }
   .greet .sub{ color:var(--muted); font-size:14px; margin-top:2px; }
-  .datebar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
-  .datebar .dlabel{ flex:1; text-align:center; font-weight:600; }
-  .datebar input[type=date]{ border:none; font-weight:600; }
+  .datebar{ display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
+  /* 單一日期控制：可見的格式化日期 + 覆蓋其上的透明原生日期選擇器（避免重複的年/月控制）*/
+  .datewrap{ position:relative; flex:1; min-width:0; }
+  .datewrap .dlabel{ display:block; text-align:center; font-weight:600; padding:6px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .datewrap input[type=date]{ position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; border:none; opacity:0; background:transparent; -webkit-appearance:none; appearance:none; }
   .deptcard{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:12px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
   .deptcard label{ display:inline-flex; align-items:center; gap:5px; font-size:14px; cursor:pointer; }
   .leave-item{ display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
@@ -30,15 +32,15 @@
 <main class="app-main">
   <div class="greet">
     <h1 id="hello">儀表板</h1>
-    <div class="sub" id="todayLabel"></div>
   </div>
 
   <div class="datebar">
-    <button class="btn sm" id="prev">‹</button>
-    <input type="date" id="date" class="dlabel" />
-    <button class="btn sm" id="next">›</button>
-    <select id="selYear" title="選擇年度"></select>
-    <select id="selMonth" title="選擇月份"></select>
+    <button class="btn sm" id="prev" aria-label="前一天">‹</button>
+    <div class="datewrap">
+      <span class="dlabel" id="dateText"></span>
+      <input type="date" id="date" aria-label="選擇日期" />
+    </div>
+    <button class="btn sm" id="next" aria-label="後一天">›</button>
     <button class="btn sm" id="today">今天</button>
   </div>
 
@@ -55,18 +57,54 @@ let cur = new Date();
 let DEPTSEL = new Set();
 let me = null;
 
+// 部門篩選：桌機行內多選；手機收合為下拉
+let DEPTS = [];
+let deptMenuOpen = false;
+const deptMobile = window.matchMedia('(max-width: 560px)');
+deptMobile.addEventListener('change', ()=>{ deptMenuOpen = false; renderDeptFilter(); });
+document.addEventListener('click', (e)=>{
+  if (!deptMenuOpen) return;
+  if (e.target.closest && e.target.closest('#deptDrop')) return;
+  deptMenuOpen = false;
+  const m = document.getElementById('deptMenu'); if (m) m.hidden = true;
+});
+
 function pad(n){ return String(n).padStart(2,'0'); }
 function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function dateText(d){ return `${d.getFullYear()}年${pad(d.getMonth()+1)}月${pad(d.getDate())}日（${'日一二三四五六'[d.getDay()]}）`; }
 function greetWord(){ const h = new Date().getHours(); return h < 11 ? '早安' : h < 18 ? '午安' : '晚安'; }
+function deptName(id){ const d = DEPTS.find(x=>String(x.id)===String(id)); return d ? d.name : ''; }
+
+function renderDeptFilter(){
+  const host = document.getElementById('deptboxes');
+  if (!DEPTS.length){ host.innerHTML = '<span class="muted">無部門</span>'; return; }
+  const boxes = DEPTS.map(d=>
+    `<label><input type="checkbox" class="df" value="${esc(d.id)}" ${DEPTSEL.has(String(d.id))?'checked':''}/> ${esc(d.name)}</label>`).join('');
+  if (deptMobile.matches){
+    const n = DEPTSEL.size;
+    const lab = n===0 ? '全部' : (n<=2 ? [...DEPTSEL].map(deptName).filter(Boolean).join('、') : `已選 ${n} 個`);
+    host.innerHTML = `<div class="deptdrop" id="deptDrop">`
+      + `<button class="btn sm deptbtn" id="deptBtn" aria-expanded="${deptMenuOpen}">${esc(lab)} <span class="caret">▾</span></button>`
+      + `<div class="deptmenu" id="deptMenu"${deptMenuOpen?'':' hidden'}>${boxes}`
+      + `<div class="foot"><button class="btn sm" id="dfClear">清除</button><button class="btn sm primary" id="dfClose">完成</button></div>`
+      + `</div></div>`;
+    const dbtn = document.getElementById('deptBtn');
+    const dmenu = document.getElementById('deptMenu');
+    dbtn.onclick = (e)=>{ e.stopPropagation(); deptMenuOpen = !deptMenuOpen; dmenu.hidden = !deptMenuOpen; dbtn.setAttribute('aria-expanded', deptMenuOpen); };
+    const dfx = document.getElementById('dfClose'); if (dfx) dfx.onclick = ()=>{ deptMenuOpen=false; dmenu.hidden=true; dbtn.setAttribute('aria-expanded','false'); };
+  } else {
+    host.innerHTML = boxes;
+  }
+  host.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); if (deptMobile.matches) deptMenuOpen = true; renderDeptFilter(); load(); });
+  const dfc = document.getElementById('dfClear'); if (dfc) dfc.onclick=()=>{ DEPTSEL.clear(); if (deptMobile.matches) deptMenuOpen = true; renderDeptFilter(); load(); };
+}
 
 async function boot(){
   load(); // 當日資料不依賴身分，最先發出
-  // 部門勾選（與儀表板資料並行載入）
+  // 部門篩選（與儀表板資料並行載入）；桌機行內多選、手機收合為下拉
   fetch(`${App.API_BASE}/api/departments`,{cache:'no-store'}).then(r=>r.json()).then(ds=>{
-    document.getElementById('deptboxes').innerHTML = ds.map(d=>
-      `<label><input type="checkbox" class="df" value="${esc(d.id)}"/> ${esc(d.name)}</label>`).join('') || '<span class="muted">無部門</span>';
-    document.querySelectorAll('.df').forEach(c=>c.onchange=()=>{ c.checked?DEPTSEL.add(c.value):DEPTSEL.delete(c.value); load(); });
-  }).catch(()=>{});
+    DEPTS = ds || []; renderDeptFilter();
+  }).catch(()=>{ DEPTS = []; renderDeptFilter(); });
   // 身分由 app.js 提供（含快取），不再自打 /api/me（打招呼用）
   me = (await App.ready).me;
   document.getElementById('hello').textContent = me ? `${greetWord()}，${me.name}！` : `${greetWord()}！`;
@@ -74,9 +112,7 @@ async function boot(){
 
 async function load(){
   document.getElementById('date').value = ymd(cur);
-  document.getElementById('selYear').innerHTML = App.yearOptions(cur.getFullYear());
-  document.getElementById('selMonth').innerHTML = App.monthOptions(cur.getMonth()+1);
-  document.getElementById('todayLabel').textContent = `${cur.getFullYear()}年${pad(cur.getMonth()+1)}月${pad(cur.getDate())}日（${'日一二三四五六'[cur.getDay()]}）`;
+  document.getElementById('dateText').textContent = dateText(cur);
   const c = document.getElementById('content');
   c.innerHTML = '<div class="status">載入中…</div>';
   try {
@@ -139,16 +175,6 @@ async function dedupe(){
   load();
 }
 
-// 年/月下拉跳轉：保留原本的「日」，超過該月天數則取月底
-function jumpYm(){
-  const y = Number(document.getElementById('selYear').value);
-  const m = Number(document.getElementById('selMonth').value);
-  const d = Math.min(cur.getDate(), new Date(y, m, 0).getDate());
-  cur = new Date(y, m-1, d);
-  load();
-}
-document.getElementById('selYear').onchange = jumpYm;
-document.getElementById('selMonth').onchange = jumpYm;
 document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-1); load(); };
 document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+1); load(); };
 document.getElementById('today').onclick = ()=>{ cur = new Date(); load(); };
