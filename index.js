@@ -134,13 +134,19 @@ export default {
         if (!emp) return json({ error: 'employee_not_found' }, 404);
         // 一個裝置只綁一人：先把這個 token 從其他人身上清掉
         await env.DB.prepare('UPDATE employees SET device_token = NULL WHERE device_token = ?').bind(t).run();
-        await env.DB.prepare('UPDATE employees SET device_token = ? WHERE id = ?').bind(t, employee_id).run();
+        await env.DB.prepare('UPDATE employees SET device_token = ?, last_login = ? WHERE id = ?').bind(t, new Date().toISOString(), employee_id).run();
         return json({ id: emp.id, name: emp.name, english_name: emp.english_name });
       }
 
       if (pathname === '/api/me' && method === 'GET') {
         const me = await meFromToken(env, token(request));
         if (!me) return json({ error: 'not_bound' }, 401);
+        // 記錄最近活動時間（節流：與上次相差超過 10 分鐘才寫，避免每次換頁都寫 DB）
+        const nowMs = Date.now();
+        const lastMs = me.last_login ? Date.parse(me.last_login) : 0;
+        if (!lastMs || nowMs - lastMs > 600000) {
+          await env.DB.prepare('UPDATE employees SET last_login = ? WHERE id = ?').bind(new Date(nowMs).toISOString(), me.id).run();
+        }
         return json({
           id: me.id, name: me.name, english_name: me.english_name, role: me.role || 'user',
           status: me.status || 'active', department_ids: safeIds(me.department_ids),
@@ -331,7 +337,7 @@ export default {
       if (pathname === '/api/admin/employees' && method === 'GET') {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare(
-          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role FROM employees ORDER BY sort_order, name',
+          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role, last_login FROM employees ORDER BY sort_order, name',
         ).all();
         return json(r.results);
       }
