@@ -26,6 +26,7 @@
 const { esc } = App;
 let types = [], holidays = [], tab = 'lt';
 let holYear = new Date().getFullYear();
+let holMonth = ''; // ''＝全部月份（清單顯示篩選，不重新查詢）
 
 /* ── 假別 ── */
 async function loadTypes(){
@@ -99,7 +100,8 @@ function hoTag(type){
   return type==='company' ? '<span class="tag green">公司假</span>' : '<span class="tag blue">國定假日</span>';
 }
 function renderHo(){
-  const rows = holidays.map(h=>`
+  const list = holMonth ? holidays.filter(h=>Number((h.date||'').slice(5,7))===Number(holMonth)) : holidays;
+  const rows = list.map(h=>`
     <tr>
       <td><b>${esc(h.date)}</b> <span class="muted">${'日一二三四五六'[new Date(h.date+'T00:00:00').getDay()]}</span></td>
       <td>${esc(h.name||'')||'<span class="muted">—</span>'}</td>
@@ -109,17 +111,25 @@ function renderHo(){
   document.getElementById('panel').innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:10px;">
-        <div class="row"><b>假日</b><button class="btn sm" id="py">‹</button><b>${holYear}</b><button class="btn sm" id="ny">›</button></div>
+        <div class="row"><b>假日</b>
+          <button class="btn sm" id="py">‹</button>
+          <select id="hoYear" title="選擇年度">${App.yearOptions(holYear)}</select>
+          <button class="btn sm" id="ny">›</button>
+          <select id="hoMonth" title="篩選月份">${App.monthOptions(holMonth, '全部月份')}</select>
+          <span class="muted">（${list.length}）</span>
+        </div>
         <button class="btn primary" id="add">＋ 新增假日</button>
       </div>
       <div class="table-wrap"><table class="data">
         <thead><tr><th>日期</th><th>名稱</th><th>類型</th><th></th></tr></thead>
-        <tbody>${rows||'<tr><td colspan="4" class="empty">本年尚無假日</td></tr>'}</tbody>
+        <tbody>${rows||`<tr><td colspan="4" class="empty">${holMonth?'該月':'本年'}尚無假日</td></tr>`}</tbody>
       </table></div>
       <div class="muted" style="margin-top:8px;">「國定假日」＝政府公告放假日；「公司假」＝公司自訂放假日（例：員工旅遊）。兩者排休時都會自動略過。</div>
     </div>`;
   document.getElementById('py').onclick = async ()=>{ holYear--; await loadHols(); renderHo(); };
   document.getElementById('ny').onclick = async ()=>{ holYear++; await loadHols(); renderHo(); };
+  document.getElementById('hoYear').onchange = async (e)=>{ holYear = Number(e.target.value); await loadHols(); renderHo(); };
+  document.getElementById('hoMonth').onchange = (e)=>{ holMonth = e.target.value; renderHo(); };
   document.getElementById('add').onclick = ()=>hoForm();
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>hoForm(holidays.find(x=>x.id===b.dataset.edit)));
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delHo(b.dataset.del));

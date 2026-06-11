@@ -53,6 +53,21 @@
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function adminKey() { return localStorage.getItem('dev_admin_key') || ''; }
+
+  // 年/月下拉選項（跨年資料瀏覽用）。年度範圍＝今年-3 ～ 今年+1，並保證包含目前選到的年份。
+  function yearOptions(sel) {
+    const now = new Date().getFullYear();
+    const ys = new Set(Array.from({ length: 5 }, (_, i) => now - 3 + i));
+    if (sel) ys.add(Number(sel));
+    return [...ys].sort((a, b) => a - b)
+      .map((y) => `<option value="${y}"${y === Number(sel) ? ' selected' : ''}>${y} 年</option>`).join('');
+  }
+  // allLabel 給「全部月份」這類不限月的選項（值為空字串）
+  function monthOptions(sel, allLabel) {
+    let out = allLabel ? `<option value=""${sel ? '' : ' selected'}>${allLabel}</option>` : '';
+    for (let m = 1; m <= 12; m++) out += `<option value="${m}"${m === Number(sel) ? ' selected' : ''}>${m} 月</option>`;
+    return out;
+  }
   function api(path, opts = {}) {
     const k = adminKey();
     return fetch(API_BASE + path, {
@@ -291,7 +306,7 @@
 
   let resolveReady;
   window.App = {
-    API_BASE, esc, api, adminApi, params, me: null, isAdmin: false,
+    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, me: null, isAdmin: false,
     // 頁面可 await App.ready 取得身分（殼畫好後 resolve；未綁定時 me 為 null）
     ready: new Promise((r) => { resolveReady = r; }),
   };
