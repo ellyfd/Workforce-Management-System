@@ -757,13 +757,17 @@ async function buildLeaveCheck(env, empId, dates) {
 
 async function buildDashboard(env, date, deptParam) {
   const deptIds = (deptParam || '').split(',').filter(Boolean);
-  const [emps, depts, types, recs, hol] = await Promise.all([
+  // 連未來 6 天一起撈（七日展望用）；當日邏輯只用 date 當天那批
+  const endDate = addDays(date, 6);
+  const [emps, depts, types, recsRange, hols] = await Promise.all([
     env.DB.prepare("SELECT id, name, english_name, department_ids, deputy_1, deputy_2 FROM employees WHERE status = 'active'").all(),
     env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
     env.DB.prepare('SELECT * FROM leave_types').all(),
-    env.DB.prepare('SELECT * FROM leave_records WHERE date = ?').bind(date).all(),
-    env.DB.prepare('SELECT 1 FROM holidays WHERE date = ? LIMIT 1').bind(date).first(),
+    env.DB.prepare('SELECT * FROM leave_records WHERE date >= ? AND date <= ?').bind(date, endDate).all(),
+    env.DB.prepare('SELECT date FROM holidays WHERE date >= ? AND date <= ?').bind(date, endDate).all(),
   ]);
+  const holSet = new Set(hols.results.map((h) => h.date));
+  const recs = { results: recsRange.results.filter((r) => r.date === date) };
 
   const typeById = Object.fromEntries(types.results.map((t) => [t.id, t]));
   const deptById = Object.fromEntries(depts.results.map((d) => [d.id, d]));
@@ -773,7 +777,7 @@ async function buildDashboard(env, date, deptParam) {
 
   // 非工作日（週末 / 國定假日）：應到 0、出勤率不計
   const dow = new Date(date + 'T00:00:00').getDay();
-  const isNonWorking = dow === 0 || dow === 6 || !!hol;
+  const isNonWorking = dow === 0 || dow === 6 || holSet.has(date);
 
   const scoped = emps.results.filter(inScope);
   const scopedIds = new Set(scoped.map((e) => e.id));
@@ -824,6 +828,40 @@ async function buildDashboard(env, date, deptParam) {
   const onDuty = Math.max(0, expected - onCount);
   const rate = expected > 0 ? Math.round((onDuty / expected) * 1000) / 10 : 100;
 
+  // 部門人力一覽：各部門當日在職/請假數與 1/3 上限（套用部門篩選）
+  const scopedDept = (d) => !deptIds.length || deptIds.includes(d.id);
+  const deptStats = depts.results
+    .filter((d) => scopedDept(d) && (deptActive[d.id] || 0) > 0)
+    .map((d) => {
+      const active = deptActive[d.id] || 0;
+      const cnt = (deptOnLeave[d.id] || new Set()).size;
+      const lim = Math.floor(active / 3);
+      return { id: d.id, name: d.name, active, on_leave: cnt, limit: lim, over: lim > 0 && cnt >= lim };
+    });
+
+  // 七日展望：自選定日起 7 天，每天的請假人數（套用部門篩選）與達 1/3 上限的部門
+  const outlook = [];
+  for (let i = 0; i < 7; i++) {
+    const dStr = addDays(date, i);
+    const dayIds = new Set(recsRange.results.filter((r) => r.date === dStr).map((r) => r.employee_id));
+    const dayByDept = {};
+    for (const id of dayIds) {
+      const e = empByIdAll[id];
+      if (e) for (const did of safeIds(e.department_ids)) (dayByDept[did] ||= new Set()).add(id);
+    }
+    const overDepts = depts.results
+      .filter(scopedDept)
+      .filter((d) => { const lim = Math.floor((deptActive[d.id] || 0) / 3); return lim > 0 && (dayByDept[d.id] || new Set()).size >= lim; })
+      .map((d) => d.name);
+    const wd = new Date(dStr + 'T00:00:00').getDay();
+    outlook.push({
+      date: dStr,
+      non_working: wd === 0 || wd === 6 || holSet.has(dStr),
+      count: [...dayIds].filter((id) => scopedIds.has(id)).length,
+      over_depts: overDepts,
+    });
+  }
+
   return {
     date,
     is_non_working: isNonWorking,
@@ -834,9 +872,17 @@ async function buildDashboard(env, date, deptParam) {
     by_type: Object.values(byType).sort((a, b) => b.count - a.count),
     on_leave_list: onLeaveList,
     warnings,
+    dept_stats: deptStats,
+    outlook,
     departments: depts.results,
     updated_at: new Date().toISOString(),
   };
+}
+
+function addDays(ymd, n) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 async function buildStats(env, year) {
