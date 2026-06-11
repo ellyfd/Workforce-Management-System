@@ -103,7 +103,6 @@ function fmtLogin(iso){
 }
 const deptName = id => (depts.find(d=>d.id===id)||{}).name || '';
 function empDeptIds(e){ try{ const v=JSON.parse(e.department_ids||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
-function empManagedIds(e){ try{ const v=JSON.parse(e.managed_dept_ids||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
 function empDepts(e){ return empDeptIds(e).map(deptName).filter(Boolean); }
 function empById(id){ return emps.find(e=>e.id===id); }
 function nameOf(id){ const e=empById(id); return e?e.name:''; }
@@ -216,7 +215,7 @@ function paintEmpList(){
       <td><div class="nmcell"><b>${esc(e.name)}</b>${e.english_name?`<small class="en">${esc(e.english_name)}</small>`:''}</div></td>
       <td>${empDepts(e).map(n=>`<span class="tag">${esc(n)}</span>`).join(' ')||'<span class="muted">—</span>'}</td>
       <td>${dep?esc(dep):'<span class="muted">—</span>'}</td>
-      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span>${e.role==='admin'?' <span class="tag blue">管理員</span>':e.role==='manager'?' <span class="tag blue">主管</span>':''}</td>
+      <td><span class="tag ${STATUS_CLS[e.status]||'gray'}">${STATUS[e.status]||e.status}</span>${e.role==='admin'?' <span class="tag blue">管理員</span>':''}</td>
       <td>${fmtLogin(e.last_login)}</td>
       <td class="acts"><button class="iconbtn" data-edit="${esc(e.id)}" title="編輯" aria-label="編輯">✏️</button><button class="iconbtn del" data-del="${esc(e.id)}" title="刪除" aria-label="刪除">🗑️</button></td>
     </tr>`;
@@ -274,8 +273,6 @@ function empForm(e){
   const cur = e || { name:'', english_name:'', department_ids:'[]', status:'active', deputy_1:null, deputy_2:null, sort_order:(emps.length+1)*10 };
   let ids = empDeptIds(cur);
   const checks = depts.map(d=>`<label><input type="checkbox" class="dc" value="${esc(d.id)}" ${ids.includes(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
-  const managed = empManagedIds(cur);
-  const mchecks = depts.map(d=>`<label><input type="checkbox" class="mdc" value="${esc(d.id)}" ${managed.includes(d.id)?'checked':''}/> ${esc(d.name)}</label>`).join('');
   const statusOpts = Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${cur.status===k?'selected':''}>${v}</option>`).join('');
   modal(`${e?'編輯':'新增'}員工`, `
     <div class="field"><label>姓名</label><input id="f_name" value="${esc(cur.name)}" /></div>
@@ -285,12 +282,9 @@ function empForm(e){
     <div class="field"><label>第二順位職代</label><select id="f_dep2"></select></div>
     <div class="row" style="gap:10px;">
       <div class="field" style="flex:1;"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
-      <div class="field" style="flex:1;"><label>角色</label><select id="f_role"><option value="user"${(!cur.role||cur.role==='user')?' selected':''}>一般</option><option value="manager"${cur.role==='manager'?' selected':''}>主管</option><option value="admin"${cur.role==='admin'?' selected':''}>管理員</option></select></div>
+      <div class="field" style="flex:1;"><label>角色</label><select id="f_role"><option value="user"${cur.role!=='admin'?' selected':''}>一般</option><option value="admin"${cur.role==='admin'?' selected':''}>管理員</option></select></div>
     </div>
-    <div class="field" id="f_mgr_wrap" style="display:${cur.role==='manager'?'':'none'};"><label>負責部門（主管的可見範圍）</label>
-      <label style="display:flex;gap:8px;align-items:center;margin:2px 0 8px;font-weight:600;cursor:pointer;"><input type="checkbox" id="f_mgr_all" ${managed.includes('*')?'checked':''}/> 看全部部門（含日後新增）</label>
-      <div class="checks" id="f_mdepts">${mchecks||'<span class="muted">尚無部門</span>'}</div></div>
-    <div class="muted" style="font-size:14px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。<br>角色：<b>一般</b>只看自己部門；<b>主管</b>另可看「負責部門」；<b>管理員</b>看全部並可編輯排休與進設定。</div>
+    <div class="muted" style="font-size:14px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。管理員才能進設定管理與編輯排休。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if (!name){ App.toast('請輸入姓名','err'); return false; }
@@ -302,7 +296,6 @@ function empForm(e){
       deputy_2: document.getElementById('f_dep2').value || null,
       status: document.getElementById('f_status').value,
       role: document.getElementById('f_role').value,
-      managed_dept_ids: document.getElementById('f_mgr_all').checked ? ['*'] : [...document.querySelectorAll('#f_mdepts .mdc:checked')].map(i=>i.value),
     };
     const res = e ? await App.adminApi(`/api/admin/employees/${e.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/employees',{method:'POST',body:JSON.stringify(body)});
@@ -321,13 +314,6 @@ function empForm(e){
     d2.innerHTML = deputyOptions(selfId, dids, cur2, d1.value || cur1); // 排除 deputy_1
   };
   refreshDeputies();
-  // 角色切到「主管」才顯示負責部門
-  const roleSel = document.getElementById('f_role'), mgrWrap = document.getElementById('f_mgr_wrap');
-  roleSel.onchange = ()=>{ mgrWrap.style.display = roleSel.value==='manager' ? '' : 'none'; };
-  // 「看全部部門」勾選時，停用個別部門勾選
-  const mgrAll = document.getElementById('f_mgr_all');
-  const toggleMgrAll = ()=>{ document.querySelectorAll('#f_mdepts .mdc').forEach(c=>c.disabled = mgrAll.checked); document.getElementById('f_mdepts').style.opacity = mgrAll.checked ? '.45' : '1'; };
-  mgrAll.onchange = toggleMgrAll; toggleMgrAll();
   document.querySelectorAll('#f_depts .dc').forEach(c=>c.onchange=refreshDeputies);
   document.getElementById('f_dep1').onchange = refreshDeputies; // 改 deputy_1 → 重算 deputy_2 候選
 }

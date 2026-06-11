@@ -86,8 +86,7 @@ export default {
         const now = new Date();
         const year = Number(url.searchParams.get('year')) || now.getFullYear();
         const month = Number(url.searchParams.get('month')) || now.getMonth() + 1;
-        const meCal = await meFromToken(env, token(request));
-        return json(await buildCalendar(env, year, month, viewerScope(meCal)));
+        return json(await buildCalendar(env, year, month));
       }
 
       if (pathname === '/api/employees' && method === 'GET') {
@@ -338,18 +337,18 @@ export default {
       if (pathname === '/api/admin/employees' && method === 'GET') {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const r = await env.DB.prepare(
-          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role, managed_dept_ids, last_login FROM employees ORDER BY sort_order, name',
+          'SELECT id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role, last_login FROM employees ORDER BY sort_order, name',
         ).all();
         return json(r.results);
       }
       if (pathname === '/api/admin/employees' && method === 'POST') {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
-        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0, deputy_1 = null, deputy_2 = null, role = 'user', managed_dept_ids = [] } = await request.json();
+        const { name, english_name = null, department_ids = [], status = 'active', sort_order = 0, deputy_1 = null, deputy_2 = null, role = 'user' } = await request.json();
         if (!name) return json({ error: 'missing_name' }, 400);
         const id = 'e_' + crypto.randomUUID().slice(0, 8);
         await env.DB.prepare(
-          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role, managed_dept_ids) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order, deputy_1 || null, deputy_2 || null, role, JSON.stringify(role === 'manager' ? (managed_dept_ids || []) : [])).run();
+          'INSERT INTO employees (id, name, english_name, department_ids, status, sort_order, deputy_1, deputy_2, role) VALUES (?,?,?,?,?,?,?,?,?)',
+        ).bind(id, name, english_name, JSON.stringify(department_ids || []), status, sort_order, deputy_1 || null, deputy_2 || null, role).run();
         return json({ id });
       }
       // 批次更新（統一改部門 / 狀態；未給的欄位不動）
@@ -380,17 +379,12 @@ export default {
         if (!(await canAdmin(env, request))) return json({ error: 'unauthorized' }, 401);
         const b = await request.json();
         const dids = b.department_ids !== undefined ? JSON.stringify(b.department_ids || []) : null;
-        // 負責部門：有帶才更新；非主管角色一律清空，避免降級後殘留可見範圍
-        const mdids = b.managed_dept_ids !== undefined
-          ? JSON.stringify(b.role === 'manager' ? (b.managed_dept_ids || []) : [])
-          : (b.role && b.role !== 'manager' ? '[]' : null);
         await env.DB.prepare(
           `UPDATE employees SET name = COALESCE(?,name), english_name = COALESCE(?,english_name),
              department_ids = COALESCE(?,department_ids), status = COALESCE(?,status),
-             sort_order = COALESCE(?,sort_order), deputy_1 = ?, deputy_2 = ?, role = COALESCE(?,role),
-             managed_dept_ids = COALESCE(?,managed_dept_ids) WHERE id = ?`,
+             sort_order = COALESCE(?,sort_order), deputy_1 = ?, deputy_2 = ?, role = COALESCE(?,role) WHERE id = ?`,
         ).bind(b.name ?? null, b.english_name ?? null, dids, b.status ?? null, b.sort_order ?? null,
-          b.deputy_1 ?? null, b.deputy_2 ?? null, b.role ?? null, mdids, empM[1]).run();
+          b.deputy_1 ?? null, b.deputy_2 ?? null, b.role ?? null, empM[1]).run();
         if (b.status === 'inactive') await clearDeputyRefs(env, empM[1]); // 離職→清理別人指向他的職代
         return json({ ok: true });
       }
@@ -486,8 +480,7 @@ export default {
         const now = new Date();
         const date = url.searchParams.get('date') || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
         const dept = url.searchParams.get('dept') || '';
-        const meDash = await meFromToken(env, token(request));
-        return json(await buildDashboard(env, date, dept, viewerScope(meDash)));
+        return json(await buildDashboard(env, date, dept));
       }
 
       // ── 儀表板統計 ──────────────────────────────────────────────
@@ -526,7 +519,7 @@ export default {
   },
 };
 
-async function buildCalendar(env, year, month, scope = null) {
+async function buildCalendar(env, year, month) {
   // 只撈該年度（前端單月/全年檢視都以年為單位重新取），避免逐年累積的舊資料拖慢查詢與肥大回應。
   const [depts, emps, types, recs, hols] = await Promise.all([
     env.DB.prepare("SELECT * FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
@@ -557,9 +550,7 @@ async function buildCalendar(env, year, month, scope = null) {
     if (w) yearTotals[r.employee_id] = (yearTotals[r.employee_id] || 0) + w;
   }
 
-  // 依檢視者可見範圍過濾部門（scope=null＝admin 看全部）
-  const visibleDepts = scope ? depts.results.filter((d) => scope.has(d.id)) : depts.results;
-  const departments = visibleDepts
+  const departments = depts.results
     .map((d) => ({
       name: d.name,
       members: emps.results
@@ -587,18 +578,6 @@ function safeIds(s) {
   } catch {
     return [];
   }
-}
-
-// 檢視者可見的部門 id 集合：admin 回 null＝看全部；manager＝自己部門∪負責部門；
-// 一般員工＝自己部門；未綁定＝空集合（看不到）。用於 /api/calendar、/api/dashboard 過濾。
-function viewerScope(me) {
-  if (!me) return new Set();
-  if (me.role === 'admin') return null;
-  const managed = safeIds(me.managed_dept_ids);
-  if (me.role === 'manager' && managed.includes('*')) return null; // 主管勾「看全部部門」
-  const ids = new Set(safeIds(me.department_ids));
-  if (me.role === 'manager') for (const d of managed) ids.add(d);
-  return ids;
 }
 
 // ── DPC 同步：Base44 為真相來源，單向灌進 D1 ──────────────────────────
@@ -776,9 +755,8 @@ async function buildLeaveCheck(env, empId, dates) {
   return { threshold, dept_size: deptMemberIds.size, results };
 }
 
-async function buildDashboard(env, date, deptParam, scope = null) {
+async function buildDashboard(env, date, deptParam) {
   const deptIds = (deptParam || '').split(',').filter(Boolean);
-  const all = scope === null; // admin＝全部
   const [emps, depts, types, recs, hol] = await Promise.all([
     env.DB.prepare("SELECT id, name, english_name, department_ids, deputy_1, deputy_2 FROM employees WHERE status = 'active'").all(),
     env.DB.prepare("SELECT id, name FROM departments WHERE status != 'hidden' ORDER BY sort_order").all(),
@@ -790,8 +768,7 @@ async function buildDashboard(env, date, deptParam, scope = null) {
   const typeById = Object.fromEntries(types.results.map((t) => [t.id, t]));
   const deptById = Object.fromEntries(depts.results.map((d) => [d.id, d]));
   const empByIdAll = Object.fromEntries(emps.results.map((e) => [e.id, e]));
-  const inView = (e) => all || safeIds(e.department_ids).some((id) => scope.has(id)); // 檢視者可見範圍
-  const inScope = (e) => inView(e) && (!deptIds.length || safeIds(e.department_ids).some((id) => deptIds.includes(id)));
+  const inScope = (e) => !deptIds.length || safeIds(e.department_ids).some((id) => deptIds.includes(id));
   const isBiz = (tid) => { const t = typeById[tid]; return /差/.test(t ? (t.short_name || t.name || '') : ''); };
 
   // 非工作日（週末 / 國定假日）：應到 0、出勤率不計
@@ -857,7 +834,7 @@ async function buildDashboard(env, date, deptParam, scope = null) {
     by_type: Object.values(byType).sort((a, b) => b.count - a.count),
     on_leave_list: onLeaveList,
     warnings,
-    departments: all ? depts.results : depts.results.filter((d) => scope.has(d.id)),
+    departments: depts.results,
     updated_at: new Date().toISOString(),
   };
 }
