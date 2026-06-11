@@ -60,6 +60,8 @@ body.has-shell{ padding-left:var(--sidebar-w); }
 
   /* 表單控制項 16px：iOS 不再聚焦放大，且選單文字更易讀 */
   input, select{ font-size:16px; }
+  /* 按鈕與頁籤同步放大為 16px，與下拉同級——同一排控制項大小看起來一致 */
+  .btn, .btn.sm, .tabs button{ font-size:16px; }
 
   /* 頁首更精簡，少佔垂直空間 */
   .page-head{ margin-bottom:8px; gap:8px; }
