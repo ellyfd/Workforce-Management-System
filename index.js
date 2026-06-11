@@ -654,13 +654,12 @@ async function syncFromBase44(env) {
 
   const stmts = [];
 
-  // 1) DPC 部門（upsert）
-  //    sort_order 不從 Base44 同步——部門排序由人員管理頁手動維護，
-  //    僅在首次建立時給預設值，之後同步不再覆蓋。
+  // 1) DPC 部門：只在不存在時建立，已存在則完全不動
+  //    （名稱、排序、狀態皆由人員管理頁手動維護，同步不覆蓋）
   stmts.push(
     env.DB.prepare(
       'INSERT INTO departments (id,name,sort_order,status) VALUES (?,?,?,?) ' +
-        'ON CONFLICT(id) DO UPDATE SET name=excluded.name, status=excluded.status',
+        'ON CONFLICT(id) DO NOTHING',
     ).bind(D1_DPC_DEPT, displayName, 10, 'active'),
   );
 
