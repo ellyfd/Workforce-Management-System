@@ -21,8 +21,7 @@
   .leave-item .dp{ color:var(--muted); font-size:14px; font-weight:400; }
   .leave-item .sp{ flex:1; }
   .typewrap{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  .warn-note{ color:var(--muted); font-size:13px; margin-top:10px; line-height:1.6; }
-  .warn-note .wl{ color:#b45309; }
+  .lgwarn{ color:#b45309; font-size:12px; line-height:1.5; margin:0 0 4px; padding:0 8px; }
   .nwk{ display:inline-block; background:#f3f4f6; color:var(--muted); font-size:14px; border-radius:6px; padding:1px 8px; margin-left:8px; }
 </style>
 </head>
@@ -135,9 +134,33 @@ function render(s){
     if (!g){ g = { dept:key, items:[] }; gmap.set(key, g); groups.push(g); }
     g.items.push(p);
   });
+
+  // 異常請假：後端是綁在個人身上，依其部門歸到對應群組標題顯示。
+  // 部門層級原因（達 1/3 上限）整組只顯示一次；個人原因（職代衝突）才標出當事人。
+  const warns = s.warnings || [];
+  const pDept = new Map();
+  list.forEach(p=>pDept.set(`${p.name}|${p.english_name||''}`, p.department||'未分部門'));
+  const deptWarn = new Map();
+  warns.forEach(w=>{
+    const dept = pDept.get(`${w.name}|${w.english_name||''}`) || '未分部門';
+    let g = deptWarn.get(dept);
+    if (!g){ g = { deptReasons:new Set(), people:[] }; deptWarn.set(dept, g); }
+    const own = [];
+    (w.reasons||[]).forEach(r=>{ if (/1\/3/.test(r)) g.deptReasons.add(r); else own.push(r); });
+    if (own.length) g.people.push({ name:w.name, reasons:own });
+  });
+  const warnHead = (dept)=>{
+    const g = deptWarn.get(dept);
+    if (!g) return '';
+    const parts = [...g.deptReasons].map(esc);
+    g.people.forEach(p=>parts.push(`${esc(p.name)}（${p.reasons.map(esc).join('、')}）`));
+    return parts.length ? `<div class="lgwarn">⚠ ${parts.join('；')}</div>` : '';
+  };
+
   const listHtml = list.length
     ? groups.map(g=>`<div class="lgroup">
         <div class="lghead">${esc(g.dept)}<span class="muted"> ${g.items.length}</span></div>
+        ${warnHead(g.dept)}
         ${g.items.map(p=>`<div class="leave-item">
           <div class="nm">${esc(p.name)}${p.english_name?` <span class="dp">${esc(p.english_name)}</span>`:''}</div>
           <div class="sp"></div>
@@ -145,12 +168,6 @@ function render(s){
         </div>`).join('')}
       </div>`).join('')
     : '<div class="empty"><div style="margin-top:8px;">今日無休假人員</div></div>';
-
-  const warns = s.warnings || [];
-  const warnCard = warns.length ? `
-    <div class="card" style="margin-top:12px;">
-      <div class="warn-note"><span class="wl">異常請假 ${warns.length} 筆</span>　${warns.map(w=>`${esc(w.name)}（${w.reasons.map(esc).join('、')}）`).join('；')}</div>
-    </div>` : '';
 
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
@@ -165,8 +182,7 @@ function render(s){
         ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
-    </div>
-    ${warnCard}`;
+    </div>`;
 
   const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
 }
