@@ -180,6 +180,9 @@ npx wrangler deploy                      # 部署,Cron 一併生效
 > 部署後開 `/settings` 輸入 `SYNC_SECRET` 按「立即同步」做第一次灌入。
 > 平時 push 到 GitHub `main` 就會自動重新部署,連 deploy 指令都省了。
 
+> ⚠️ **只有 `main` 會部署。** 在功能分支(feature branch)上 commit／push **不會讓正式站有任何變化**——要上線就得**合併進 `main`**。
+> 另外:`git reset` + force-push 退回舊 commit **不會觸發重新部署**(沒有新 commit)。要還原一個已上線的功能,請在分支上疊一個「把內容改回去」的**正向 commit**,再合併進 `main`,才會真的反映。詳見 `CLAUDE.md`。
+
 ### 本機開發
 
 ```sh

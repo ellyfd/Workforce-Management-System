@@ -2,6 +2,11 @@ name = "workforcemanagement"
 main = "index.js"
 compatibility_date = "2024-09-01"
 
+# ⚠️ 部署：正式站只從 `main` 分支自動部署。
+#    功能分支上的 commit/push 不會上線，必須合併進 main 才會重新部署。
+#    force-push 退回舊 commit 也不會觸發部署（沒有新 commit）。詳見 CLAUDE.md。
+# 快取：public/_headers 設 no-cache，讓部署後立即生效，勿移除。
+
 # 前端網頁（index.html=全部排休、me.html=我的排休）由 Worker 一併服務。
 # 靜態資源優先比對：對得上的路徑直接回檔案，對不上的（例如 /api/*）才進 index.js。
 [assets]
