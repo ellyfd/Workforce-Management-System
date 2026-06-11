@@ -668,7 +668,8 @@ async function load(silent){
     document.getElementById('table').style.display = 'none';
   }
   // 先發出行事曆請求，與 initEditing（抓假別）並行，少一趟往返
-  const pCal = fetch(`${API_BASE}/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
+  // 用 App.api 帶上裝置 token，後端才能依檢視者身分限縮可見部門
+  const pCal = App.api(`/api/calendar?year=${curYear}&month=${curMonth}`, { cache: 'no-store' });
   await initEditing();
   try {
     const res = await pCal;
