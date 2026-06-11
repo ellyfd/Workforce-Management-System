@@ -615,6 +615,7 @@ async function warnFor(empId, dates, type){
     const data = await r.json(); const msgs = [];
     for (const dd of dates){ const w = data.results[dd]; if (!w) continue;
       if (w.deputies && w.deputies.length) msgs.push(`${dd}：職代 ${w.deputies.join('、')} 當天也請假`);
+      if (w.deputies_biz && w.deputies_biz.length) msgs.push(`${dd}：職代 ${w.deputies_biz.join('、')} 當天出差`);
       if (w.over) msgs.push(`${dd}：部門當天請假已達 1/3（已 ${w.dept_count} 人）`);
     }
     return msgs;

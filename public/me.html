@@ -509,6 +509,7 @@ async function warnFor(dates, typeId){
     for (const d of dates){
       const w = data.results[d]; if (!w) continue;
       if (w.deputies && w.deputies.length) msgs.push(`${d}：職代 ${w.deputies.join('、')} 當天也請假`);
+      if (w.deputies_biz && w.deputies_biz.length) msgs.push(`${d}：職代 ${w.deputies_biz.join('、')} 當天出差`);
       if (w.over) msgs.push(`${d}：部門當天請假已達 1/3（已 ${w.dept_count} 人）`);
     }
     return msgs;
