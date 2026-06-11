@@ -143,7 +143,7 @@
     }
   }
 
-  function renderProfile(ctx, editDeputy = false) {
+  function renderProfile(ctx, editing = false) {
     const { me, depts, emps, types, leaves, year, month } = ctx;
     const body = document.getElementById('ppBody'); if (!body) return;
     const typeById = Object.fromEntries(types.map((t) => [t.id, t]));
@@ -164,36 +164,47 @@
       return `<div class="li"><span class="dot" style="background:${esc(t.color || '#64748b')}"></span>${esc(t.name || '未分類')}<span class="v">${d} 天</span></div>`;
     }).join('');
 
-    // 職代卡：檢視或編輯（候選＝與本人有共同部門的在職同仁）
+    // 本人可自行編輯：英文名 + 職代（候選＝與本人有共同部門的在職同仁）。部門/狀態/角色僅管理員可改。
     const myDeptSet = new Set(me.department_ids || []);
     const cands = emps.filter((e) => e.id !== me.id && ids(e.department_ids).some((d) => myDeptSet.has(d)));
     const opts = (cur, exclude) => '<option value="">無</option>' + cands.filter((e) => e.id !== exclude)
       .map((e) => `<option value="${esc(e.id)}"${e.id === cur ? ' selected' : ''}>${esc(e.name)}</option>`).join('');
-    const depCard = editDeputy
+
+    const head = editing
+      ? `<div class="pp-head">
+           <span class="avatar lg">${esc((me.name || '?').slice(0, 1))}</span>
+           <div style="flex:1;min-width:0;"><b style="font-size:16px;">${esc(me.name || '')}</b>
+             <input id="ppEng" placeholder="英文名（選填）" value="${esc(me.english_name || '')}" style="margin-top:5px;width:100%;padding:6px 8px;" /></div>
+         </div>`
+      : `<div class="pp-head">
+           <span class="avatar lg">${esc((me.name || '?').slice(0, 1))}</span>
+           <div style="flex:1;min-width:0;"><b style="font-size:16px;">${esc(me.name || '')}</b>
+             ${me.english_name ? `<div class="muted">${esc(me.english_name)}</div>` : ''}</div>
+           <a href="#" id="ppEdit" style="color:var(--blue);text-decoration:none;font-size:14px;">編輯</a>
+         </div>`;
+
+    const depCard = editing
       ? `<div class="pp-card" style="grid-column:1/-1;"><div class="k">職務代理人</div>
            <div class="row" style="margin-top:6px;gap:8px;">
              <select id="ppDep1" style="flex:1;">${opts(me.deputy_1, me.deputy_2)}</select>
              <select id="ppDep2" style="flex:1;">${opts(me.deputy_2, me.deputy_1)}</select>
-           </div>
-           <div class="row" style="margin-top:8px;justify-content:flex-end;">
-             <button class="btn sm" id="ppDepCancel">取消</button>
-             <button class="btn sm primary" id="ppDepSave">儲存</button>
            </div></div>`
-      : `<div class="pp-card"><div class="k">職務代理人 <a href="#" id="ppDepEdit" style="float:right;color:var(--blue);text-decoration:none;">編輯</a></div>
+      : `<div class="pp-card"><div class="k">職務代理人</div>
            ${esc([me.deputy_1, me.deputy_2].filter(Boolean).map(empName).filter(Boolean).join('、') || '—')}</div>`;
 
     body.innerHTML = `
-      <div class="pp-head">
-        <span class="avatar lg">${esc((me.name || '?').slice(0, 1))}</span>
-        <div><b style="font-size:16px;">${esc(me.name || '')}</b>
-          ${me.english_name ? `<div class="muted">${esc(me.english_name)}</div>` : ''}</div>
-      </div>
+      ${head}
       <div class="pp-cards">
         <div class="pp-card"><div class="k">部門</div>${esc(deptNames)}</div>
         ${depCard}
         <div class="pp-card"><div class="k">狀態</div>${esc(STATUS_LABEL[me.status] || me.status || '—')}</div>
         <div class="pp-card"><div class="k">角色</div>${me.role === 'admin' ? '管理員' : '一般'}</div>
       </div>
+      ${editing
+        ? `<div class="row" style="justify-content:flex-end;gap:8px;margin:12px 0 4px;">
+             <button class="btn sm" id="ppCancel">取消</button>
+             <button class="btn sm primary" id="ppSave">儲存</button></div>`
+        : `<div class="muted" style="font-size:13px;margin:8px 2px 0;">部門、狀態、角色由管理員於「人員管理」維護。</div>`}
       <h3 class="pp-sect">${month} 月請假小計</h3>
       ${rows(monthStat) || '<div class="muted" style="padding:4px 2px;">本月尚無請假</div>'}
       ${monthStat.sum ? `<div class="pp-total"><span>小計</span><span>${monthStat.sum} 天</span></div>` : ''}
@@ -201,19 +212,22 @@
       ${rows(yearStat) || '<div class="muted" style="padding:4px 2px;">今年尚無請假</div>'}
       ${yearStat.sum ? `<div class="pp-total"><span>年度合計</span><span>${yearStat.sum} 天</span></div>` : ''}`;
 
-    const editBtn = document.getElementById('ppDepEdit');
-    if (editBtn) editBtn.onclick = (e) => { e.preventDefault(); renderProfile(ctx, true); };
-    const cancelBtn = document.getElementById('ppDepCancel');
-    if (cancelBtn) cancelBtn.onclick = () => renderProfile(ctx, false);
-    const saveBtn = document.getElementById('ppDepSave');
-    if (saveBtn) saveBtn.onclick = async () => {
+    if (!editing) {
+      const eb = document.getElementById('ppEdit');
+      if (eb) eb.onclick = (e) => { e.preventDefault(); renderProfile(ctx, true); };
+      return;
+    }
+    document.getElementById('ppCancel').onclick = () => renderProfile(ctx, false);
+    document.getElementById('ppSave').onclick = async () => {
+      const eng = document.getElementById('ppEng').value.trim();
       const d1 = document.getElementById('ppDep1').value || null;
       const d2 = document.getElementById('ppDep2').value || null;
-      if (d1 && d1 === d2) { alert('兩位職代不可相同'); return; }
-      const r = await api('/api/my-profile', { method: 'PUT', body: JSON.stringify({ deputy_1: d1, deputy_2: d2 }) });
-      if (!r.ok) { alert('儲存失敗'); return; }
-      ctx.me.deputy_1 = d1; ctx.me.deputy_2 = d2;
+      if (d1 && d1 === d2) { toast('兩位職代不可相同', 'err'); return; }
+      const r = await api('/api/my-profile', { method: 'PUT', body: JSON.stringify({ english_name: eng, deputy_1: d1, deputy_2: d2 }) });
+      if (!r.ok) { toast('儲存失敗', 'err'); return; }
+      ctx.me.english_name = eng; ctx.me.deputy_1 = d1; ctx.me.deputy_2 = d2;
       writeMeCache(ctx.me); // 同步側欄快取，避免下次換頁誤判資料變更而重載
+      toast('已更新個人資料', 'ok');
       renderProfile(ctx, false);
     };
   }

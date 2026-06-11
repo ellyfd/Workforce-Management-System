@@ -148,7 +148,7 @@ export default {
         });
       }
 
-      // 本人可編輯的個人資料（目前開放：職代）
+      // 本人可編輯的個人資料（開放：英文名、職代）。部門/狀態/角色仍僅限管理員於人員管理調整。
       if (pathname === '/api/my-profile' && method === 'PUT') {
         const me = await meFromToken(env, token(request));
         if (!me) return json({ error: 'not_bound' }, 401);
@@ -156,7 +156,8 @@ export default {
         const d1 = b.deputy_1 || null, d2 = b.deputy_2 || null;
         if (d1 === me.id || d2 === me.id) return json({ error: 'self_deputy' }, 400);
         if (d1 && d1 === d2) return json({ error: 'duplicate_deputy' }, 400);
-        await env.DB.prepare('UPDATE employees SET deputy_1 = ?, deputy_2 = ? WHERE id = ?').bind(d1, d2, me.id).run();
+        const eng = b.english_name !== undefined ? (b.english_name || '') : null; // 未帶＝不動
+        await env.DB.prepare('UPDATE employees SET english_name = COALESCE(?, english_name), deputy_1 = ?, deputy_2 = ? WHERE id = ?').bind(eng, d1, d2, me.id).run();
         return json({ ok: true });
       }
 
