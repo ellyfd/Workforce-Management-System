@@ -11,7 +11,7 @@
   .cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
   .cal .wd{ text-align:center; font-size:14px; color:var(--muted); padding:4px 0; }
   .cal .wd.we{ color:var(--red); }
-  .day{ aspect-ratio:1/1; border:1px solid var(--border); border-radius:8px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; background:#fff; position:relative; }
+  .day{ aspect-ratio:1/1; min-width:0; overflow:hidden; border:1px solid var(--border); border-radius:8px; padding:4px; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; cursor:pointer; background:#fff; position:relative; }
   .day.we{ background:var(--weekend); }
   .day.holiday{ background:var(--holiday); }
   /* 日期數字與假日名稱同一行：名稱靠右、縮小、過長截斷（完整名稱看 tooltip），把格子主體讓給假別色塊，避免假日名稱壓到色塊 */
@@ -36,6 +36,12 @@
   .list{ display:flex; flex-direction:column; gap:6px; }
   .emp{ padding:9px 12px; border:1px solid var(--border); border-radius:8px; cursor:pointer; }
   .emp:hover{ background:#f3f4f6; }
+  /* 假別筆刷：桌機用色票 chip，手機改用下拉 */
+  .lchips{ display:flex; flex-wrap:wrap; gap:6px; flex:1; align-content:flex-start; }
+  .lchip{ border:1.5px solid var(--c); color:var(--c); background:#fff; border-radius:999px; padding:5px 12px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2; transition:background .12s, color .12s; }
+  .lchip:hover{ background:#f8fafc; }
+  .lchip.on{ background:var(--c); color:#fff; }
+  .lsel{ display:none; }
 
   /* 手機：縮小日曆格內距與字級，避免色塊溢出格子 */
   @media (max-width:560px){
@@ -51,6 +57,9 @@
     .summary{ gap:6px 10px; }
     .sumitem{ font-size:13px; }
     .cal-nav b{ font-size:14px; }
+    /* 手機：隱藏 chip、改用下拉 */
+    .lchips{ display:none; }
+    .lsel{ display:block; flex:1; min-width:140px; }
   }
 </style>
 </head>
@@ -268,9 +277,18 @@ function refreshMonth(){
   attachCellHandlers();
 }
 
+// 設定目前選的假別「筆刷」，同步更新 chip 高亮與下拉值（兩者共用 selType）
+function setSelType(v){
+  selType = v;
+  document.querySelectorAll('.lchip').forEach(c => c.classList.toggle('on', c.dataset.t === v));
+  const sel = document.getElementById('ltype'); if (sel && sel.value !== v) sel.value = v;
+}
+
 function showCalendar(){
   const y = cur.getFullYear(), m = cur.getMonth() + 1;
   const opts = leaveTypes.map(t => `<option value="${t.id}"${t.id===selType?' selected':''}>${t.name}</option>`).join('');
+  // 桌機用色票 chip 當「筆刷」，選中的高亮；手機沿用下拉
+  const chips = leaveTypes.map(t => `<button class="lchip${t.id===selType?' on':''}" data-t="${t.id}" style="--c:${t.color||'#64748b'}">${t.short_name||t.name}</button>`).join('');
   // 假別圖例
   const legend = leaveTypes.map(t=>`<span class="sumitem"><span class="dot" style="background:${t.color||'#64748b'}"></span>${t.short_name||t.name} = ${t.name}</span>`).join('');
   const { calHtml, summaryHtml, rangeHtml } = buildMonth();
@@ -293,7 +311,8 @@ function showCalendar(){
       </div>
       ${summaryHtml}
       <div class="row" style="margin:10px 0; gap:8px;">
-        <select id="ltype" style="flex:1; min-width:140px;"><option value="">選擇假別…</option>${opts}</select>
+        <div class="lchips">${chips}</div>
+        <select id="ltype" class="lsel"><option value="">選擇假別…</option>${opts}</select>
         <button class="btn ${rangeMode?'primary':''}" id="rangeBtn" title="區間請假">區間</button>
       </div>
       ${rangeHtml}
@@ -323,7 +342,8 @@ function showCalendar(){
   };
   document.getElementById('selYear').onchange = ymJump;
   document.getElementById('selMonth').onchange = ymJump;
-  document.getElementById('ltype').onchange = (ev) => { selType = ev.target.value; };
+  document.getElementById('ltype').onchange = (ev) => setSelType(ev.target.value);
+  document.querySelectorAll('.lchip').forEach(c => c.onclick = () => setSelType(c.dataset.t));
   document.getElementById('rangeBtn').onclick = () => { rangeMode = !rangeMode; rangeStart = null; document.getElementById('rangeBtn').classList.toggle('primary', rangeMode); refreshMonth(); };
   attachCellHandlers();
 }
