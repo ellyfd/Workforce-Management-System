@@ -677,24 +677,10 @@ async function load(silent){
     const data = await res.json();
     if (data && data.error) throw new Error(data.error);
 
-    // D1 已經有 DPC（已由 Worker 同步進來）→ 直接用 D1。
-    // 還沒有（尚未部署/同步）→ 暫時合併靜態 dpc.json 當過渡，讓畫面先有資料。
-    const hasDpcInD1 = (data.departments || []).some((d) => /DPC/i.test(d.name || ''));
-    if (hasDpcInD1) {
-      render(data);
-    } else {
-      let dpc = null;
-      try {
-        const r2 = await fetch(DPC_URL, { cache: 'no-store' });
-        if (r2.ok) dpc = await r2.json();
-      } catch (_) { /* ignore */ }
-      render(mergeDpc(data, dpc));
-      if (dpc && dpc.updated_at) {
-        const foot = document.getElementById('footer');
-        const dpcTxt = `DPC 過渡資料：${new Date(dpc.updated_at).toLocaleString('zh-TW')}`;
-        foot.textContent = foot.textContent ? `${foot.textContent}　|　${dpcTxt}` : dpcTxt;
-      }
-    }
+    // DPC 已由 Worker 同步進 D1，直接用後端回傳；不再做靜態 dpc.json 過渡合併
+    // （過渡合併在「依檢視者限縮可見部門」後會誤判：非 DPC 使用者本來就沒 DPC，
+    //  舊邏輯會去抓外部 dpc.json 造成卡住，且把 DPC 併回去而破壞權限範圍）
+    render(data);
     if (silent && sc){ sc.scrollLeft = keepL; sc.scrollTop = keepT; }
   } catch (e) {
     if (silent){ App.toast('更新顯示失敗，請重新整理','err'); return; }
