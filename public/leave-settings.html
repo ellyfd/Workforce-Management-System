@@ -86,21 +86,23 @@ function ltForm(t){
     <div class="field"><label>計入天數（累計欄每格累加；1＝一天、0.5＝半天、0＝不計）</label><input id="l_dayv" type="number" step="0.5" min="0" value="${Number(cur.day_value)||0}" /></div>
   `, async ()=>{
     const name = document.getElementById('l_name').value.trim();
-    if (!name){ alert('請輸入名稱'); return false; }
+    if (!name){ App.toast('請輸入名稱','err'); return false; }
     const dayv = Number(document.getElementById('l_dayv').value);
-    if (Number.isNaN(dayv) || dayv < 0){ alert('計入天數請輸入 0 以上的數字'); return false; }
+    if (Number.isNaN(dayv) || dayv < 0){ App.toast('計入天數請輸入 0 以上的數字','err'); return false; }
     const body = { name, short_name: document.getElementById('l_short').value.trim()||name, color: document.getElementById('l_color').value, sort_order: Number(document.getElementById('l_sort').value)||0, day_value: dayv };
     const res = t ? await App.adminApi(`/api/admin/leave-types/${t.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/leave-types',{method:'POST',body:JSON.stringify(body)});
-    if (!res.ok){ alert('儲存失敗'); return false; }
+    if (!res.ok){ App.toast('儲存失敗','err'); return false; }
+    App.toast(t?'已更新假別':'已新增假別','ok');
     await loadTypes(); renderLt(); return true;
   });
 }
 async function delLt(id){
   const t = types.find(x=>x.id===id);
-  if (!confirm(`確定刪除假別「${t?t.name:''}」？`)) return;
+  if (!await App.confirm(`確定刪除假別「${t?t.name:''}」？`, { title:'刪除假別', okText:'刪除', danger:true })) return;
   const res = await App.adminApi(`/api/admin/leave-types/${id}`,{method:'DELETE'});
-  if (!res.ok){ alert('刪除失敗'); return; }
+  if (!res.ok){ App.toast('刪除失敗','err'); return; }
+  App.toast('已刪除','ok');
   await loadTypes(); renderLt();
 }
 
@@ -160,18 +162,20 @@ function hoForm(h){
     </select></div>
   `, async ()=>{
     const date = document.getElementById('h_date').value;
-    if (!date){ alert('請選日期'); return false; }
+    if (!date){ App.toast('請選日期','err'); return false; }
     const body = { date, name: document.getElementById('h_name').value.trim()||null, type: document.getElementById('h_type').value };
     const res = h ? await App.adminApi(`/api/admin/holidays/${h.id}`,{method:'PUT',body:JSON.stringify(body)})
                   : await App.adminApi('/api/admin/holidays',{method:'POST',body:JSON.stringify(body)});
-    if (!res.ok){ alert('儲存失敗'); return false; }
+    if (!res.ok){ App.toast('儲存失敗','err'); return false; }
+    App.toast(h?'已更新假日':'已新增假日','ok');
     holYear = Number(date.slice(0,4)); await loadHols(); renderHo(); return true;
   });
 }
 async function delHo(id){
-  if (!confirm('確定刪除此假日？')) return;
+  if (!await App.confirm('確定刪除此假日？', { title:'刪除假日', okText:'刪除', danger:true })) return;
   const res = await App.adminApi(`/api/admin/holidays/${id}`,{method:'DELETE'});
-  if (!res.ok){ alert('刪除失敗'); return; }
+  if (!res.ok){ App.toast('刪除失敗','err'); return; }
+  App.toast('已刪除','ok');
   await loadHols(); renderHo();
 }
 
