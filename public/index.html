@@ -47,6 +47,8 @@
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
   .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size:14px; color: #374151; }
+  .helpbox { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-top: 10px; }
+  .helpbox summary { cursor: pointer; font-weight: 600; }
   /* 假別篩選 chip（桌機）：色票，選中填滿 */
   .tchip{ box-sizing:border-box; min-width:52px; text-align:center; border:1.5px solid var(--c,#cbd5e1); color:var(--c,#475569); background:#fff; border-radius:999px; padding:4px 9px; font-size:13px; font-weight:600; cursor:pointer; line-height:1.2; }
   .tchip.tall{ --c:#94a3b8; }
@@ -143,8 +145,6 @@
   .status { padding: 24px; color: var(--muted); font-size: 14px; }
   .err { color: #b91c1c; }
   footer { color: var(--muted); font-size:14px; margin-top: 8px; }
-  footer .linklike { background: none; border: none; padding: 0; margin-left: 10px; font: inherit; font-size: 14px; color: var(--blue); cursor: pointer; }
-  footer .linklike:hover { text-decoration: underline; }
 
   /* 第一次來的互動式引導（聚光燈 + 步驟卡，同「我的排休」） */
   .tour-mask{ position:fixed; inset:0; z-index:299; }
@@ -204,7 +204,12 @@
 
   <div class="scroll"><div id="status" class="status">載入中…</div><table id="table" style="display:none"></table></div>
 
-  <footer><span id="footer"></span><button class="linklike" id="replayTour" type="button">▶ 重看操作引導</button></footer>
+  <details class="helpbox">
+    <summary>操作說明</summary>
+    <ul class="muted" id="helpList" style="margin:10px 0 4px;padding-left:18px;line-height:1.8;"></ul>
+    <button class="btn sm" id="replayTour" type="button" style="margin:6px 0 2px;">▶ 重看操作引導</button>
+  </details>
+  <footer id="footer"></footer>
 </div>
 
 <script src="app.js"></script>
@@ -482,6 +487,7 @@ function render(data){
   foot.textContent = data.updated_at
     ? `資料更新時間：${new Date(data.updated_at).toLocaleString('zh-TW')}`
     : '';
+  renderHelp();
 }
 
 // ── 編輯：選假別 + 單擊填入 / 雙擊取消 / 區間請假（改任一員工）─────────
@@ -742,17 +748,26 @@ document.getElementById('yearBtn').onclick = () => {
 };
 
 // ── 第一次來的互動式引導：只能看不能改、月/年切換、部門與假別篩選（同「我的排休」） ──
+// 步驟同時是下方「操作說明」的文字來源（renderHelp），改這裡兩邊一起更新。
 const TOUR_KEY = 'dev_all_tour_done';
-function startTour(){
-  if (document.querySelector('.tour-mask')) return; // 避免重複開啟
-  const steps = [
+function tourSteps(){
+  return [
     (window.App && App.isAdmin)
       ? { sel:'.toolbar.admin-only', title:'管理員編輯', body:'選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' }
       : { sel:'.scroll', title:'這裡只能看', body:'「全部排休」是全處總表，僅供查看、不能修改。要排自己的休假，請到選單的「我的排休」。' },
     { sel:'.toolbar', title:'切換月份／全年', body:'用 ‹ › 或年/月下拉換月份；按「全年」一次看整年，「今天」跳回本月。' },
     { sel:'#deptbar', title:'篩選部門', body:'勾選想看的部門，只顯示勾到的；不勾＝全部。' },
     { sel:'#typebar', title:'只看某個假別', body:'點假別色票（手機為下拉）就只顯示該假別，並只列出有請的人。' },
-  ].filter(s => document.querySelector(s.sel));
+  ];
+}
+// 操作說明＝引導的文字版；身分判定後內容會變（管理員第一條換成編輯說明），render 時更新
+function renderHelp(){
+  const el = document.getElementById('helpList');
+  if (el) el.innerHTML = tourSteps().map(s=>`<li><b>${s.title}</b>：${s.body}</li>`).join('');
+}
+function startTour(){
+  if (document.querySelector('.tour-mask')) return; // 避免重複開啟
+  const steps = tourSteps().filter(s => document.querySelector(s.sel));
   if (!steps.length) return;
   let i = 0;
   const mask = document.createElement('div'); mask.className = 'tour-mask';
