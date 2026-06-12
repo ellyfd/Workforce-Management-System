@@ -21,11 +21,11 @@
     } catch (_) {}
   }
 
-  // 「排休編輯模式」：管理員可在「個人資料」裡用開關決定是否能編輯「全部排休」。
-  // 預設關閉（純檢視），避免誤改；狀態存本機，跨頁與重開都記得。
+  // 「排休編輯模式」：管理員可在「個人資料」用開關決定是否能編輯「全部排休」。
+  // 預設開啟（管理員一進來就能編輯）；存本機，跨頁與重開都記得。存 '0' 代表關閉。
   const EDIT_MODE_KEY = 'dev_edit_mode';
-  const getEditMode = () => { try { return localStorage.getItem(EDIT_MODE_KEY) === '1'; } catch (_) { return false; } };
-  const setEditMode = (on) => { try { on ? localStorage.setItem(EDIT_MODE_KEY, '1') : localStorage.removeItem(EDIT_MODE_KEY); } catch (_) {} };
+  const getEditMode = () => { try { return localStorage.getItem(EDIT_MODE_KEY) !== '0'; } catch (_) { return true; } };
+  const setEditMode = (on) => { try { localStorage.setItem(EDIT_MODE_KEY, on ? '1' : '0'); } catch (_) {} };
 
   // 線條圖示（lucide 風格，stroke 繼承文字色）
   const svg = (paths) => `<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;

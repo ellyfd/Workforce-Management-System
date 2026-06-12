@@ -1,6 +1,6 @@
 {
-  "name": "開發處休假表",
-  "short_name": "休假表",
+  "name": "開發處排休表",
+  "short_name": "排休表",
   "start_url": "/me",
   "scope": "/",
   "display": "standalone",

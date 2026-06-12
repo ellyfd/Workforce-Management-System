@@ -1,150 +1,54 @@
-// 產生 PWA / 加到主畫面用的圖示（藍底＋白色行事曆，呼應 App 主題）。
-// 純 Node（用 zlib 自己編碼 PNG），不需要任何外部工具。
-const zlib = require("zlib");
+// 由主人提供的正式 Logo（assets/app-icon-master.png, 1024x1024）產生
+// 加到主畫面用的 icon-180/192/512.png。
+// 環境無 convert/canvas/npm，於是自寫 PNG 解碼 + 面積平均縮放 + 重新編碼。純 Node。
 const fs = require("fs");
+const zlib = require("zlib");
 const path = require("path");
 
-function crc32(buf) {
-  let c = ~0;
-  for (let i = 0; i < buf.length; i++) {
-    c ^= buf[i];
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
-  }
-  return (~c) >>> 0;
-}
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length, 0);
-  const t = Buffer.from(type, "ascii");
-  const body = Buffer.concat([t, data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body), 0);
-  return Buffer.concat([len, body, crc]);
-}
-function encodePNG(width, height, rgba) {
-  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8;   // bit depth
-  ihdr[9] = 6;   // colour type RGBA
-  // rest 0
-  const stride = width * 4;
-  const raw = Buffer.alloc((stride + 1) * height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (stride + 1)] = 0; // filter none
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride);
-  }
-  const idat = zlib.deflateSync(raw, { level: 9 });
-  return Buffer.concat([
-    sig,
-    chunk("IHDR", ihdr),
-    chunk("IDAT", idat),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
+/* ── PNG 編碼（RGBA） ── */
+function crc32(buf){let c=~0;for(let i=0;i<buf.length;i++){c^=buf[i];for(let k=0;k<8;k++)c=(c>>>1)^(0xedb88320&-(c&1));}return(~c)>>>0;}
+function chunk(type,data){const len=Buffer.alloc(4);len.writeUInt32BE(data.length,0);const body=Buffer.concat([Buffer.from(type,"ascii"),data]);const crc=Buffer.alloc(4);crc.writeUInt32BE(crc32(body),0);return Buffer.concat([len,body,crc]);}
+function encodePNG(W,H,rgba){const sig=Buffer.from([137,80,78,71,13,10,26,10]);const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(W,0);ihdr.writeUInt32BE(H,4);ihdr[8]=8;ihdr[9]=6;const stride=W*4;const raw=Buffer.alloc((stride+1)*H);for(let y=0;y<H;y++){raw[y*(stride+1)]=0;rgba.copy(raw,y*(stride+1)+1,y*stride,y*stride+stride);}return Buffer.concat([sig,chunk("IHDR",ihdr),chunk("IDAT",zlib.deflateSync(raw,{level:9})),chunk("IEND",Buffer.alloc(0))]);}
+
+/* ── PNG 解碼（支援 colortype 2=RGB / 6=RGBA, 8-bit, 非交錯） ── */
+function decodePNG(buf){
+  if(buf.readUInt32BE(0)!==0x89504e47) throw new Error("not png");
+  const W=buf.readUInt32BE(16), H=buf.readUInt32BE(20), bd=buf[24], ct=buf[25], il=buf[28];
+  if(bd!==8||il!==0||(ct!==2&&ct!==6)) throw new Error("unsupported png ct="+ct+" bd="+bd+" il="+il);
+  const ch=ct===6?4:3;
+  // 收集所有 IDAT
+  let p=33, idat=[];
+  while(p<buf.length){ const len=buf.readUInt32BE(p), type=buf.toString("ascii",p+4,p+8); if(type==="IDAT")idat.push(buf.slice(p+8,p+8+len)); if(type==="IEND")break; p+=12+len; }
+  const raw=zlib.inflateSync(Buffer.concat(idat));
+  const stride=W*ch, out=Buffer.alloc(stride*H); let rp=0;
+  const paeth=(a,b,c)=>{const pp=a+b-c,pa=Math.abs(pp-a),pb=Math.abs(pp-b),pc=Math.abs(pp-c);return pa<=pb&&pa<=pc?a:pb<=pc?b:c;};
+  for(let y=0;y<H;y++){ const f=raw[rp++]; const ro=y*stride, po=(y-1)*stride;
+    for(let x=0;x<stride;x++){ const v=raw[rp++]; const a=x>=ch?out[ro+x-ch]:0, b=y>0?out[po+x]:0, c=(x>=ch&&y>0)?out[po+x-ch]:0;
+      let r; switch(f){case 0:r=v;break;case 1:r=v+a;break;case 2:r=v+b;break;case 3:r=v+((a+b)>>1);break;case 4:r=v+paeth(a,b,c);break;default:throw new Error("bad filter "+f);} out[ro+x]=r&0xff; } }
+  return {W,H,ch,data:out};
 }
 
-function draw(S) {
-  const buf = Buffer.alloc(S * S * 4);
-  const set = (x, y, r, g, b, a = 255) => {
-    if (x < 0 || y < 0 || x >= S || y >= S) return;
-    const i = (y * S + x) * 4;
-    const ia = a / 255, na = 1 - ia;
-    buf[i] = Math.round(r * ia + buf[i] * na);
-    buf[i + 1] = Math.round(g * ia + buf[i + 1] * na);
-    buf[i + 2] = Math.round(b * ia + buf[i + 2] * na);
-    buf[i + 3] = Math.max(buf[i + 3], a);
-  };
-  // 圓角矩形（含簡單邊緣柔化）
-  const rrect = (x0, y0, x1, y1, rad, col) => {
-    for (let y = Math.floor(y0); y < Math.ceil(y1); y++) {
-      for (let x = Math.floor(x0); x < Math.ceil(x1); x++) {
-        // 與圓角中心的距離
-        let dx = 0, dy = 0;
-        if (x < x0 + rad) dx = x0 + rad - x;
-        else if (x > x1 - rad) dx = x - (x1 - rad);
-        if (y < y0 + rad) dy = y0 + rad - y;
-        else if (y > y1 - rad) dy = y - (y1 - rad);
-        const d = Math.sqrt(dx * dx + dy * dy);
-        let a = 255;
-        if (d > rad) continue;
-        if (d > rad - 1.2) a = Math.round(255 * (rad - d) / 1.2);
-        set(x, y, col[0], col[1], col[2], a);
-      }
-    }
-  };
-
-  // 圓角矩形描邊
-  const rstroke = (x0, y0, x1, y1, rad, w, col) => {
-    for (let y = Math.floor(y0) - 1; y < Math.ceil(y1) + 1; y++) {
-      for (let x = Math.floor(x0) - 1; x < Math.ceil(x1) + 1; x++) {
-        let dx = 0, dy = 0;
-        if (x < x0 + rad) dx = x0 + rad - x;
-        else if (x > x1 - rad) dx = x - (x1 - rad);
-        if (y < y0 + rad) dy = y0 + rad - y;
-        else if (y > y1 - rad) dy = y - (y1 - rad);
-        const inRound = (x < x0 + rad || x > x1 - rad) && (y < y0 + rad || y > y1 - rad);
-        const d = Math.sqrt(dx * dx + dy * dy);
-        const edge = inRound ? Math.abs(d - rad)
-          : Math.min(Math.abs(x - x0), Math.abs(x - x1), Math.abs(y - y0), Math.abs(y - y1));
-        const inside = x >= x0 && x <= x1 && y >= y0 && y <= y1 && (!inRound || d <= rad);
-        if (inside && edge <= w) set(x, y, col[0], col[1], col[2], 255);
-      }
-    }
-  };
-
-  // 配色（淺色白底＋藍框，呼應目前淺色介面）
-  const blue = [37, 99, 235];      // #2563eb
-  const white = [255, 255, 255];
-  const pink = [236, 72, 153];     // #ec4899（出差色系）
-  const gray = [203, 213, 225];    // 日期格淡灰
-  const bg = [245, 247, 250];      // 淺色底
-
-  // 淺色底（iOS 會自動套圓角遮罩）
-  for (let i = 0; i < S * S; i++) {
-    buf[i * 4] = bg[0]; buf[i * 4 + 1] = bg[1]; buf[i * 4 + 2] = bg[2]; buf[i * 4 + 3] = 255;
-  }
-
-  // 行事曆框：留多一點四周空白（依 iOS 標準，圖案不貼邊）。
-  // margin 為圖案到邊緣的留白比例；行事曆置中。
-  const margin = 0.26;
-  const calW = (1 - 2 * margin) * S;
-  const calH = calW * 0.84;                 // 略寬於高
-  const cx0 = S * margin, cx1 = S - S * margin;
-  const cy0 = (S - calH) / 2, cy1 = (S + calH) / 2;
-  const rad = calW * 0.13, headH = calH * 0.26;
-
-  rrect(cx0, cy0, cx1, cy1, rad, white);
-  rstroke(cx0, cy0, cx1, cy1, rad, Math.max(3, S * 0.011), blue);
-  // 上方藍色標頭帶
-  rrect(cx0, cy0, cx1, cy0 + headH, rad, blue);
-  rrect(cx0, cy0 + headH - rad, cx1, cy0 + headH, 0, blue);
-
-  // 日期格點（3x2 小方塊），尺寸依行事曆框換算以保持內邊距且不溢出。
-  // 右下角一格用粉色強調（＝出差）。
-  const padX = calW * 0.13, padBottom = calH * 0.1;
-  const gridW = calW - 2 * padX;
-  const cell = gridW / 3.8;                  // 3 格 + 2 個 0.4cell 間距
-  const gap = cell * 0.4;
-  const gx0 = cx0 + padX;
-  const bodyTop = cy0 + headH + calH * 0.08;
-  const bodyBottom = cy1 - padBottom;
-  const gy0 = bodyTop + ((bodyBottom - bodyTop) - (2 * cell + gap)) / 2;
-  for (let r = 0; r < 2; r++) {
-    for (let c = 0; c < 3; c++) {
-      const x = gx0 + c * (cell + gap);
-      const y = gy0 + r * (cell + gap);
-      const col = (r === 1 && c === 2) ? pink : gray;
-      rrect(x, y, x + cell, y + cell, cell * 0.28, col);
-    }
-  }
-  return buf;
+/* ── 面積平均縮放 → RGBA（不透明背景補白） ── */
+function resizeArea(src,T){
+  const {W,H,ch,data}=src, out=Buffer.alloc(T*T*4);
+  for(let ty=0;ty<T;ty++){ const sy0=ty*H/T, sy1=(ty+1)*H/T;
+    for(let tx=0;tx<T;tx++){ const sx0=tx*W/T, sx1=(tx+1)*W/T;
+      let r=0,g=0,b=0,a=0,wsum=0;
+      for(let sy=Math.floor(sy0);sy<Math.ceil(sy1);sy++){ const wy=Math.min(sy1,sy+1)-Math.max(sy0,sy);
+        for(let sx=Math.floor(sx0);sx<Math.ceil(sx1);sx++){ const wx=Math.min(sx1,sx+1)-Math.max(sx0,sx); const w=wy*wx; if(w<=0)continue;
+          const i=(sy*W+sx)*ch; const al=ch===4?data[i+3]:255;
+          r+=data[i]*w; g+=data[i+1]*w; b+=data[i+2]*w; a+=al*w; wsum+=w; } }
+      const o=(ty*T+tx)*4, af=a/wsum/255;
+      // 合成到白底（去掉透明，App 圖示用不透明）
+      out[o]=Math.round(r/wsum*af+255*(1-af));
+      out[o+1]=Math.round(g/wsum*af+255*(1-af));
+      out[o+2]=Math.round(b/wsum*af+255*(1-af));
+      out[o+3]=255;
+    } }
+  return out;
 }
 
-const outDir = path.join(__dirname, "..", "public");
-for (const S of [180, 192, 512]) {
-  const png = encodePNG(S, S, draw(S));
-  const file = path.join(outDir, `icon-${S}.png`);
-  fs.writeFileSync(file, png);
-  console.log("wrote", file, png.length, "bytes");
-}
+const master=decodePNG(fs.readFileSync(path.join(__dirname,"..","assets","app-icon-master.png")));
+console.log("master",master.W+"x"+master.H,"ch",master.ch);
+const outDir=path.join(__dirname,"..","public");
+for(const T of [180,192,512]){ const rgba=resizeArea(master,T); const file=path.join(outDir,`icon-${T}.png`); fs.writeFileSync(file,encodePNG(T,T,rgba)); console.log("wrote",file); }
