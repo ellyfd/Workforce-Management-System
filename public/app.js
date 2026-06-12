@@ -220,7 +220,8 @@
         <span class="t"><b>排休編輯模式</b><span class="muted">開啟後可在「全部排休」點任何人的格子新增／修改休假</span></span>
         <input type="checkbox" id="ppEditMode" role="switch" ${getEditMode() ? 'checked' : ''} />
         <span class="sw" aria-hidden="true"></span>
-      </label>` : ''}
+      </label>
+      <button class="btn sm" id="ppDedupe" style="width:100%;margin-top:10px;color:#b45309;border-color:#fcd34d;">清理重複記錄</button>` : ''}
       ${editing
         ? `<div class="row" style="justify-content:flex-end;gap:8px;margin:12px 0 4px;">
              <button class="btn sm" id="ppCancel">取消</button>
@@ -256,6 +257,17 @@
         document.body.classList.toggle('editing', em.checked);
         document.dispatchEvent(new CustomEvent('app:editmode', { detail: { on: em.checked } }));
         toast(em.checked ? '已開啟排休編輯模式' : '已關閉排休編輯模式', 'ok');
+      };
+      // 清理重複記錄（管理員）：同員工＋日期＋時段＋假別只留一筆
+      const dd = document.getElementById('ppDedupe');
+      if (dd) dd.onclick = async () => {
+        if (!(await confirmDialog('清理重複的休假記錄（同員工＋日期＋時段＋假別只留一筆）？', { title: '清理重複記錄', okText: '清理' }))) return;
+        dd.disabled = true;
+        const r = await adminApi('/api/admin/dedupe-leaves', { method: 'POST' });
+        dd.disabled = false;
+        if (!r.ok) { toast('清理失敗（需管理員權限）', 'err'); return; }
+        const d = await r.json().catch(() => ({}));
+        toast(`完成，清掉 ${d.removed || 0} 筆重複`, 'ok');
       };
       return;
     }
