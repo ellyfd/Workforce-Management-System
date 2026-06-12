@@ -412,13 +412,65 @@
     });
   }
 
+  // 下拉刷新（共用）：scroller 省略＝整頁(window)；onRefresh 省略＝重新整理。
+  // 各頁可設 window.onPullRefresh 自訂刷新動作（如靜默重抓資料）。
+  function enablePullToRefresh(opts) {
+    opts = opts || {};
+    if (!('ontouchstart' in window)) return;
+    const el = opts.scroller || null;
+    const target = el || window;
+    const onRefresh = opts.onRefresh || (() => location.reload());
+    const topOf = () => el ? el.scrollTop : (window.scrollY || document.documentElement.scrollTop || 0);
+    let ind = document.querySelector('.ptr-ind');
+    if (!ind) {
+      ind = document.createElement('div');
+      ind.className = 'ptr-ind';
+      ind.innerHTML = '<span class="ptr-spin"></span><span class="ptr-txt">下拉刷新</span>';
+      document.body.appendChild(ind);
+    }
+    const txt = ind.querySelector('.ptr-txt');
+    const TH = 64; // 觸發門檻
+    let startY = 0, pulling = false, dist = 0, busy = false;
+    const show = (d) => { ind.style.opacity = String(Math.min(1, d / TH)); ind.style.transform = `translateX(-50%) translateY(${Math.min(d, 70)}px)`; };
+    const hide = () => { ind.style.opacity = '0'; ind.style.transform = 'translateX(-50%) translateY(-8px)'; dist = 0; };
+    target.addEventListener('touchstart', (e) => { if (busy) return; pulling = topOf() <= 0; startY = e.touches[0].clientY; dist = 0; }, { passive: true });
+    target.addEventListener('touchmove', (e) => {
+      if (busy || !pulling) return;
+      const dy = e.touches[0].clientY - startY;
+      if (dy > 0 && topOf() <= 0) {
+        dist = dy * 0.5;
+        if (e.cancelable) e.preventDefault();
+        show(dist);
+        txt.textContent = dist >= TH ? '放開刷新' : '下拉刷新';
+      } else { pulling = false; hide(); }
+    }, { passive: false });
+    target.addEventListener('touchend', async () => {
+      if (!pulling || busy) { pulling = false; return; }
+      pulling = false;
+      if (dist >= TH) {
+        busy = true; ind.classList.add('loading'); txt.textContent = '更新中…';
+        ind.style.opacity = '1'; ind.style.transform = 'translateX(-50%) translateY(56px)';
+        try { await onRefresh(); } catch (_) {}
+        ind.classList.remove('loading'); busy = false; hide();
+      } else hide();
+    });
+  }
+  // 自動啟用：有內層捲動容器(.scroll，如「全部排休」)就用它，否則用整頁。
+  function autoEnablePTR() {
+    enablePullToRefresh({
+      scroller: document.querySelector('.scroll') || null,
+      onRefresh: () => (typeof window.onPullRefresh === 'function' ? window.onPullRefresh() : location.reload()),
+    });
+  }
+
   let resolveReady;
   window.App = {
     API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, toast, confirm: confirmDialog, deptGroup, me: null, isAdmin: false,
+    enablePullToRefresh,
     // 頁面可 await App.ready 取得身分（殼畫好後 resolve；未綁定時 me 為 null）
     ready: new Promise((r) => { resolveReady = r; }),
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
-  else mount();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { mount(); autoEnablePTR(); });
+  else { mount(); autoEnablePTR(); }
 })();

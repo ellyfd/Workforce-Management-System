@@ -261,3 +261,13 @@ table.data th.col .fbtn.on{ color:#fff; background:var(--blue); }
 .pp .li .v{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
 .pp-total{ display:flex; justify-content:space-between; border-top:1px solid var(--border);
   padding:10px 10px 0; margin-top:8px; font-weight:600; font-size:14px; }
+
+/* 下拉刷新指示（各頁共用；在頁面/表格頂端下拉時出現） */
+.ptr-ind{ position:fixed; left:50%; top:96px; z-index:60; display:flex; align-items:center; gap:7px;
+  transform:translateX(-50%) translateY(-8px); opacity:0; pointer-events:none;
+  background:#fff; border:1px solid var(--border); border-radius:999px; padding:6px 14px;
+  box-shadow:0 4px 14px rgba(0,0,0,.14); font-size:13px; color:var(--muted); transition:opacity .15s ease; }
+.ptr-ind .ptr-spin{ width:15px; height:15px; border:2px solid var(--border); border-top-color:var(--blue);
+  border-radius:50%; flex:none; }
+.ptr-ind.loading .ptr-spin{ animation:ptrspin .6s linear infinite; }
+@keyframes ptrspin{ to{ transform:rotate(360deg); } }
