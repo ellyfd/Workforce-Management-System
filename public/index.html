@@ -164,9 +164,9 @@
   .tour-card .tdots i.on{ background:var(--blue); }
   .tour-card .tbtns{ display:flex; gap:8px; }
 
-  /* 「編輯」切換鈕：桌機隱藏（管理工具列本來就直接顯示在頁首），
-     只有手機用它把管理工具列收合起來、需要時才展開。 */
-  #editToggle { display: none; }
+  /* 管理工具列：預設收起；管理員在「個人資料」開啟「排休編輯模式」(body.editing) 才顯示。 */
+  .toolbar.admin-only { display: none; }
+  body.editing .toolbar.admin-only { display: flex; }
 
   /* 平板/手機：表單控制項被全站樣式放大為 16px（避免 iOS 聚焦縮放），
      同步把頁首的標籤、按鈕、勾選也放大到 16px，整排字級才看起來一致。 */
@@ -193,10 +193,8 @@
     .filters { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; margin: 6px 0; }
     .filters .legend { margin: 0; }
 
-    /* 「編輯」鈕現身；管理工具列預設收起，按「編輯」才展開（省兩列高度） */
-    #editToggle { display: inline-flex; align-items: center; }
-    .toolbar.admin-only { display: none; margin-top: 6px; }
-    body.editing .toolbar.admin-only { display: flex; }
+    /* 管理工具列在手機上與頁首隔開一點（顯示與否由 body.editing 全域控制） */
+    .toolbar.admin-only { margin-top: 6px; }
 
     /* 頁首變矮後，捲動區可以更高、一次看到更多人與天數 */
     .scroll { max-height: calc(100dvh - 188px); }
@@ -216,8 +214,6 @@
     <button id="next">›</button>
     <button class="today-btn" id="todayBtn">今天</button>
     <button id="yearBtn">全年</button>
-    <span class="spacer"></span>
-    <button id="editToggle" class="admin-only" title="新增／修改休假">✏️ 編輯</button>
   </div>
 
   <div class="filters">
@@ -523,6 +519,8 @@ function render(data){
 
 // ── 編輯：選假別 + 單擊填入 / 雙擊取消 / 區間請假（改任一員工）─────────
 const isAdmin = ()=> !!(window.App && window.App.isAdmin);
+// 真正可編輯 = 管理員 且 已在「個人資料」開啟排休編輯模式（body.editing）。
+const canEdit = ()=> isAdmin() && document.body.classList.contains('editing');
 async function initEditing(){
   if (editingInit) return;
   editingInit = true;
@@ -539,13 +537,13 @@ async function initEditing(){
     if (rb) rb.onclick = ()=>{ rangeMode = !rangeMode; rangeEmp = null; rangeStart = null; rb.classList.toggle('today-btn', rangeMode); document.getElementById('editHint').textContent = rangeMode ? '區間：點某人某天當起點，再點同一列的結束日' : ''; render(LAST); };
   }
   const table = document.getElementById('table');
-  table.addEventListener('click', (e)=>{ if (!isAdmin()) return; const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
-  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ if (isAdmin()) onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
+  table.addEventListener('click', (e)=>{ if (!canEdit()) return; const td = e.target.closest('td.day[data-emp]'); if (td) onCell(td.dataset.emp, td.dataset.date); });
+  table.addEventListener('dblclick', (e)=>{ const td = e.target.closest('td.day[data-emp]'); if (td){ if (canEdit()) onCellDbl(td.dataset.emp, td.dataset.date, e); return; } const th = e.target.closest('th.day[data-date]'); if (th){ highlightDate = highlightDate===th.dataset.date ? null : th.dataset.date; render(LAST); } });
 }
 
 // 拖曳排序員工（限同部門）：放開後依新順序重設 sort_order。
 function attachDrag(){
-  if (!isAdmin()) return; // 僅管理員可拖曳排序
+  if (!canEdit()) return; // 僅管理員 + 編輯模式開啟時可拖曳排序
   document.querySelectorAll('tr.emprow').forEach(tr=>{
     tr.ondragstart = (e)=>{ dragEmp = tr.dataset.emp; tr.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; };
     tr.ondragend = ()=>{ tr.classList.remove('dragging'); document.querySelectorAll('.dragover').forEach(x=>x.classList.remove('dragover')); };
@@ -778,13 +776,16 @@ document.getElementById('yearBtn').onclick = () => {
   document.getElementById('yearBtn').textContent = fullYear ? '單月' : '全年';
   load().then(scrollToToday);
 };
-// 手機：「編輯」切換管理工具列的展開/收合（桌機此鈕隱藏，工具列恆顯示）。
-// 此鈕帶 .admin-only，非管理員會被 app.js 移除，故先判空再綁定。
-const editToggleBtn = document.getElementById('editToggle');
-if (editToggleBtn) editToggleBtn.onclick = () => {
-  const on = document.body.classList.toggle('editing');
-  editToggleBtn.classList.toggle('today-btn', on);
-};
+// 「排休編輯模式」改由「個人資料」抽屜裡的開關控制（app.js 送出 app:editmode）。
+// 切換時重畫以重綁拖曳/編輯，並在關閉時把區間模式歸零。
+document.addEventListener('app:editmode', (e)=>{
+  if (!(e.detail && e.detail.on)) {
+    rangeMode = false; rangeEmp = null; rangeStart = null;
+    const rb = document.getElementById('rangeBtn'); if (rb) rb.classList.remove('today-btn');
+    const eh = document.getElementById('editHint'); if (eh) eh.textContent = '';
+  }
+  if (LAST) render(LAST);
+});
 
 // ── 第一次來的互動式引導：只能看不能改、月/年切換、部門與假別篩選（同「我的排休」） ──
 // 步驟同時是下方「操作說明」的文字來源（renderHelp），改這裡兩邊一起更新。
@@ -792,10 +793,7 @@ const TOUR_KEY = 'dev_all_tour_done';
 function tourSteps(){
   return [
     (window.App && App.isAdmin)
-      // 手機上管理工具列預設收合，引導指向可見的「編輯」鈕並提示先展開
-      ? (deptMobile.matches
-          ? { sel:'#editToggle', title:'管理員編輯', body:'點「編輯」展開管理工具列：選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' }
-          : { sel:'.toolbar.admin-only', title:'管理員編輯', body:'選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' })
+      ? { sel:'.toolbar', title:'管理員編輯', body:'到右上「個人資料」開啟「排休編輯模式」後，回到本頁就能點任何人的格子新增／修改休假；雙擊已填的格子取消（半天點上半/下半），「區間」可一次填一整段。' }
       : { sel:'.scroll', title:'這裡只能看', body:'「全部排休」是全處總表，僅供查看、不能修改。要排自己的休假，請到選單的「我的排休」。' },
     { sel:'.toolbar', title:'切換月份／全年', body:'用 ‹ › 或年/月下拉換月份；按「全年」一次看整年，「今天」跳回本月。' },
     { sel:'#deptbar', title:'篩選部門', body:'勾選想看的部門，只顯示勾到的；不勾＝全部。' },

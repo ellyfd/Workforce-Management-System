@@ -4,7 +4,7 @@
   --ink:#1f2937; --blue:#2563eb; --blue-bg:#eff6ff; --indigo:#3730a3;
   --green:#16a34a; --red:#dc2626; --amber:#f59e0b;
   --weekend:#fef2f2; --holiday:#fef2f2; --today:#fef3c7;
-  --sidebar-w:220px; --topbar-h:52px; --bottomnav-h:60px;
+  --sidebar-w:220px; --topbar-h:52px; --bottomnav-h:76px;
   --shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
 }
 *{ box-sizing:border-box; }
@@ -79,10 +79,10 @@ body.has-shell{ padding-left:var(--sidebar-w); }
   }
   .app-bottomnav a, .app-bottomnav button{
     flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:3px; min-width:0; background:none; border:none; cursor:pointer; text-decoration:none;
-    color:var(--muted); font:inherit; font-size:11px; line-height:1; padding:8px 2px 4px;
+    gap:4px; min-width:0; background:none; border:none; cursor:pointer; text-decoration:none;
+    color:var(--muted); font:inherit; font-size:12px; line-height:1; padding:10px 2px 6px;
   }
-  .app-bottomnav .ni{ width:23px; height:23px; flex:none; }
+  .app-bottomnav .ni{ width:28px; height:28px; flex:none; }
   .app-bottomnav span{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
   .app-bottomnav a.active, .app-bottomnav button.active{ color:var(--blue); font-weight:600; }
   .app-bottomnav a:active, .app-bottomnav button:active{ background:#f3f4f6; }
@@ -241,6 +241,19 @@ table.data th.col .fbtn.on{ color:#fff; background:var(--blue); }
 .pp-cards{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .pp-card{ background:#f8fafc; border-radius:10px; padding:10px 12px; font-size:14px; }
 .pp-card .k{ color:var(--muted); font-size:14px; margin-bottom:3px; }
+/* 排休編輯模式開關（iOS 風 switch） */
+.pp-editmode{ display:flex; align-items:center; gap:12px; margin-top:10px;
+  background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer; }
+.pp-editmode .t{ display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+.pp-editmode .t b{ font-size:15px; }
+.pp-editmode .t .muted{ font-size:12px; }
+.pp-editmode input{ position:absolute; opacity:0; width:0; height:0; }
+.pp-editmode .sw{ flex:none; width:50px; height:30px; border-radius:999px; background:#d1d5db; position:relative; transition:background .18s; }
+.pp-editmode .sw::after{ content:''; position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .18s; }
+.pp-editmode input:checked + .sw{ background:var(--blue); }
+.pp-editmode input:checked + .sw::after{ transform:translateX(20px); }
+.pp-editmode input:focus-visible + .sw{ outline:2px solid var(--blue); outline-offset:2px; }
 .pp-sect{ font-size:14px; font-weight:600; margin:18px 0 6px; }
 .pp .li{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px;
   background:#f8fafc; margin:6px 0; font-size:14px; }

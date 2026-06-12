@@ -21,6 +21,12 @@
     } catch (_) {}
   }
 
+  // 「排休編輯模式」：管理員可在「個人資料」裡用開關決定是否能編輯「全部排休」。
+  // 預設關閉（純檢視），避免誤改；狀態存本機，跨頁與重開都記得。
+  const EDIT_MODE_KEY = 'dev_edit_mode';
+  const getEditMode = () => { try { return localStorage.getItem(EDIT_MODE_KEY) === '1'; } catch (_) { return false; } };
+  const setEditMode = (on) => { try { on ? localStorage.setItem(EDIT_MODE_KEY, '1') : localStorage.removeItem(EDIT_MODE_KEY); } catch (_) {} };
+
   // 線條圖示（lucide 風格，stroke 繼承文字色）
   const svg = (paths) => `<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   const ICONS = {
@@ -206,6 +212,12 @@
         <div class="pp-card"><div class="k">狀態</div>${esc(STATUS_LABEL[me.status] || me.status || '—')}</div>
         <div class="pp-card"><div class="k">角色</div>${me.role === 'admin' ? '管理員' : '一般'}</div>
       </div>
+      ${(me.role === 'admin' && !editing) ? `
+      <label class="pp-editmode" id="ppEditModeWrap">
+        <span class="t"><b>排休編輯模式</b><span class="muted">開啟後可在「全部排休」點任何人的格子新增／修改休假</span></span>
+        <input type="checkbox" id="ppEditMode" role="switch" ${getEditMode() ? 'checked' : ''} />
+        <span class="sw" aria-hidden="true"></span>
+      </label>` : ''}
       ${editing
         ? `<div class="row" style="justify-content:flex-end;gap:8px;margin:12px 0 4px;">
              <button class="btn sm" id="ppCancel">取消</button>
@@ -234,6 +246,14 @@
       };
       const sw = document.getElementById('ppSwitch'); if (sw) sw.onclick = signOut;
       const lo = document.getElementById('ppLogout'); if (lo) lo.onclick = signOut;
+      // 排休編輯模式開關：記住狀態、切換 body.editing，並通知「全部排休」頁重綁定。
+      const em = document.getElementById('ppEditMode');
+      if (em) em.onchange = () => {
+        setEditMode(em.checked);
+        document.body.classList.toggle('editing', em.checked);
+        document.dispatchEvent(new CustomEvent('app:editmode', { detail: { on: em.checked } }));
+        toast(em.checked ? '已開啟排休編輯模式' : '已關閉排休編輯模式', 'ok');
+      };
       return;
     }
     document.getElementById('ppCancel').onclick = () => renderProfile(ctx, false);
@@ -327,6 +347,8 @@
     const isAdmin = !!(me && me.role === 'admin');
     window.App.me = me; window.App.isAdmin = isAdmin;
     document.body.classList.toggle('is-admin', isAdmin);
+    // 套用記住的編輯模式（非管理員一律關閉）
+    document.body.classList.toggle('editing', isAdmin && getEditMode());
 
     document.body.insertAdjacentHTML('afterbegin',
       buildSidebar(isAdmin, me) +
