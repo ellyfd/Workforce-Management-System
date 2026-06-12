@@ -14,9 +14,12 @@
       return c && c.t === DEVICE && c.me ? c.me : null;
     } catch (_) { return null; }
   }
+  // first_seen 只在「真正第一次 /api/me」那一刻有意義（用來觸發新手導覽），
+  // 不可進快取——否則換頁時會用到舊的 true 而誤跳導覽。快取與比較都把它拿掉。
+  const omitFirstSeen = (me) => { if (!me) return me; const c = { ...me }; delete c.first_seen; return c; };
   function writeMeCache(me) {
     try {
-      if (me) sessionStorage.setItem(ME_CACHE_KEY, JSON.stringify({ t: DEVICE, me }));
+      if (me) sessionStorage.setItem(ME_CACHE_KEY, JSON.stringify({ t: DEVICE, me: omitFirstSeen(me) }));
       else sessionStorage.removeItem(ME_CACHE_KEY);
     } catch (_) {}
   }
@@ -333,8 +336,9 @@
       renderShell(cached); // 先用快取立即畫殼，不等網路
       const fresh = await fetchMe(); // 背景驗證
       writeMeCache(fresh);
-      // 已解綁或資料變了（換人/角色/職代）→ 重載一次套用；快取已更新，不會迴圈
-      if (!fresh || JSON.stringify(fresh) !== JSON.stringify(cached)) location.reload();
+      // 已解綁或資料變了（換人/角色/職代）→ 重載一次套用；快取已更新，不會迴圈。
+      // 比較時排除 first_seen（不進快取），避免它造成假性差異而無限重載。
+      if (!fresh || JSON.stringify(omitFirstSeen(fresh)) !== JSON.stringify(cached)) location.reload();
       return;
     }
     const me = await fetchMe();

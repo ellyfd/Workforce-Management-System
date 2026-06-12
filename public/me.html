@@ -145,7 +145,9 @@ async function init(){
     leaveTypes = await pTypes;
     await pLeaves;
     showCalendar();
-    if (!localStorage.getItem(TOUR_KEY)) setTimeout(startTour, 300); // 第一次登入才跑教學
+    // 只有從沒登入過的人（後端 last_login 仍空）才跑新手教學；
+    // 曾登入過就有紀錄，之後在任何裝置重新登入都不再跳。localStorage 為同機保險。
+    if (me.first_seen && !localStorage.getItem(TOUR_KEY)) setTimeout(startTour, 300);
   } catch (e) {
     app.innerHTML = `<div class="status err">連線失敗：${e.message}<br>請確認 API_BASE 設定正確（目前：${API_BASE}）</div>`;
   }
