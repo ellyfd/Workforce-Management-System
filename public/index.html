@@ -35,7 +35,7 @@
   }
   .page { padding: 12px; max-width: 100%; }
   header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
-  header.top h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  header.top h1 { font-size: 26px; margin: 0; font-weight: 600; }
   header.top .sub { color: var(--muted); font-size:14px; }
   header.top .spacer { flex: 1; }
   header.top a.nav-link { font-size:14px; color: var(--blue); text-decoration: none; }
@@ -49,8 +49,10 @@
   .toolbar button:hover { background: #f3f4f6; }
   .toolbar .month-label { font-weight: 600; min-width: 110px; text-align: center; }
   /* 頁首所有控制項（下拉、按鈕）統一字級與字重，與標籤/勾選看起來一致 */
-  .toolbar select { font: inherit; font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: #fff; padding: 6px 8px; }
+  .toolbar select { font: inherit; font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: #f8fafc; padding: 4px 8px; }
   .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
+  /* 篩選下拉（年/月/只看假別）做輕：font 維持 16px（iOS 不縮放），但縮內距＋柔和底色，視覺不搶標題 */
+  .ymsel { padding: 4px 8px; border: 1px solid var(--border); background: #f8fafc; font-weight: 400; border-radius: 8px; }
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
   .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size:14px; color: #374151; }
@@ -189,14 +191,14 @@
   @media (max-width: 560px) {
     :root { --name-w: 80px; --day-w: 32px; --row-h: 36px; --head-h: 42px; }
     .page { padding: 10px 8px 4px; }
-    header.top h1 { font-size: 18px; }
+    header.top h1 { font-size: 26px; }
     .chip { font-size: 11px; }
     thead th.tot, tbody td.tot { min-width: 40px; width: 40px; }
 
     /* ── 頁首壓縮：把控制項擠進更少列，讓表格更早出現 ── */
     /* 年/月導覽列：縮小內距與間距，盡量擠在同一排（避免「全年」被擠到下一行） */
     .toolbar { margin: 6px 0; gap: 6px; }
-    .toolbar button, .toolbar select { padding: 6px 8px; }
+    .toolbar button { padding: 6px 8px; }
 
     /* 部門 + 只看假別：併到同一排，去掉各自的上下外距 */
     .filters { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; margin: 6px 0; }
