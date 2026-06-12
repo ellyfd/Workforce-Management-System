@@ -44,24 +44,26 @@
   .owday .cnt{ font-size:12px; color:var(--muted); }
   .owday .cnt b{ font-size:14px; color:#111827; }
   .owday .dot{ position:absolute; top:5px; right:6px; width:7px; height:7px; border-radius:50%; background:#dc2626; }
-  /* 部門人力條狀圖：每部門一列（名稱/占比條/請假數），底下接休假者膠囊與警示 */
-  .drow{ padding:8px 0 7px; border-bottom:1px solid var(--border); }
+  /* 部門人力：每部門一個區塊（標題＋人數一行 → 占比條 → 休假者膠囊 → 警示框） */
+  .drow{ padding:11px 0; border-bottom:1px solid var(--border); }
   .drow:last-child{ border-bottom:none; }
-  .dstat{ display:flex; align-items:center; gap:10px; padding:2px; }
-  .dstat .dn{ width:110px; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .dstat .bar{ flex:1; height:8px; background:#f1f5f9; border-radius:99px; overflow:hidden; }
-  .dstat .bar i{ display:block; height:100%; border-radius:99px; }
-  .dstat .num{ font-size:13px; color:var(--muted); white-space:nowrap; }
+  .dhead{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .dhead .dn{ font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dhead .num{ font-size:13px; color:var(--muted); white-space:nowrap; flex:none; }
   .dtag{ display:inline-block; margin-left:6px; font-size:11px; font-weight:600; color:#dc2626; background:#fef2f2; border:1px solid #fecaca; border-radius:999px; padding:0 6px; vertical-align:1px; }
-  .prow{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:7px 0 1px 2px; }
-  .prow .people{ margin:0; flex:1; min-width:0; }
-  .prow .lgwarn{ margin:0 0 0 auto; padding:0; text-align:right; max-width:55%; }
-  .people{ display:flex; flex-wrap:wrap; gap:6px; margin:7px 0 1px 2px; }
+  .bar{ height:8px; background:#f1f5f9; border-radius:99px; overflow:hidden; margin:7px 0; }
+  .bar i{ display:block; height:100%; border-radius:99px; }
+  .people{ display:flex; flex-wrap:wrap; gap:6px; margin:7px 0 0; }
   .ppill{ display:inline-flex; align-items:center; gap:7px; background:#f8fafc; border:1px solid var(--border); border-radius:999px; padding:3px 5px 3px 11px; font-size:13px; font-weight:600; }
   .ppill .pe{ color:var(--muted); font-weight:400; font-size:12px; }
   .ppill .chip{ font-size:11px; padding:1px 8px; border-radius:999px; }
+  /* 警示：獨立黃色提示框，逐項換行，不再擠成右側長句 */
+  .dwarn{ display:flex; gap:7px; align-items:flex-start; margin-top:8px; padding:7px 10px;
+    background:#fffbeb; border:1px solid #fde68a; border-radius:8px; font-size:12px; color:#92400e; line-height:1.55; }
+  .dwarn .wi{ flex:none; }
+  .dwarn .wlines{ min-width:0; }
   @media (max-width:560px){
-    .dstat .dn{ width:84px; } .owday .cnt{ font-size:11px; } .ppill .pe{ display:none; } .prow .lgwarn{ max-width:100%; text-align:left; }
+    .owday .cnt{ font-size:11px; } .ppill .pe{ display:none; }
 
     /* ── 頁首瘦身：問候、日期列、部門篩選更緊湊，KPI 卡縮小 ── */
     .greet h1{ font-size:18px; }
@@ -84,9 +86,9 @@
 
   <div class="ctrlrow">
     <div class="datebar">
-      <button class="btn sm" id="prev" aria-label="前一天">‹</button>
+      <button class="btn sm" id="prev" aria-label="上一週" title="上一週">‹</button>
       <input type="date" id="date" class="dlabel" aria-label="選擇日期" />
-      <button class="btn sm" id="next" aria-label="後一天">›</button>
+      <button class="btn sm" id="next" aria-label="下一週" title="下一週">›</button>
       <button class="btn sm" id="today">今天</button>
     </div>
   </div>
@@ -218,8 +220,10 @@ function render(s){
     const g = deptWarn.get(dept);
     if (!g) return '';
     const parts = [...g.deptReasons].map(esc);
-    g.people.forEach(p=>parts.push(`${esc(p.name)}（${p.reasons.map(esc).join('、')}）`));
-    return parts.length ? `<div class="lgwarn">⚠ ${parts.join('；')}</div>` : '';
+    g.people.forEach(p=>parts.push(`${esc(p.name)}：${p.reasons.map(esc).join('、')}`));
+    return parts.length
+      ? `<div class="dwarn"><span class="wi">⚠</span><div class="wlines">${parts.map(p=>`<div>${p}</div>`).join('')}</div></div>`
+      : '';
   };
 
   // 依 key 分組，保留首次出現次序
@@ -236,14 +240,14 @@ function render(s){
     const drow = (d, items)=>{
       const pct = d.active ? Math.min(100, Math.round(d.on_leave/d.active*100)) : 0;
       const color = d.over ? '#dc2626' : (d.limit>0 && d.on_leave===d.limit-1 ? '#f59e0b' : '#94a3b8');
-      const w = warnHead(d.name);
       return `<div class="drow">
-        <div class="dstat">
-          <div class="dn">${esc(d.name)}${d.over?'<span class="dtag">達 1/3</span>':''}</div>
-          <div class="bar"><i style="width:${pct}%;background:${color};"></i></div>
-          <div class="num">${d.active?`請假 ${d.on_leave}／${d.active} 人`:`請假 ${d.on_leave} 人`}</div>
+        <div class="dhead">
+          <span class="dn">${esc(d.name)}${d.over?'<span class="dtag">達 1/3</span>':''}</span>
+          <span class="num">${d.active?`${d.on_leave}／${d.active} 人請假`:`${d.on_leave} 人請假`}</span>
         </div>
-        ${(items.length||w)?`<div class="prow">${items.length?`<div class="people">${items.map(pill).join('')}</div>`:''}${w}</div>`:''}
+        <div class="bar"><i style="width:${pct}%;background:${color};"></i></div>
+        ${items.length?`<div class="people">${items.map(pill).join('')}</div>`:''}
+        ${warnHead(d.name)}
       </div>`;
     };
     listHtml = ds.filter(d=>d.on_leave>0).map(d=>drow(d, list.filter(p=>inDept(p, d.name)))).join('');
@@ -310,7 +314,6 @@ function render(s){
             <option value="type">依假別</option>
           </select>
         </div>
-        ${((me&&me.role==='admin')||App.isAdmin)?'<button class="btn sm" id="dedupe" style="color:#b45309;border-color:#fcd34d;">清理重複記錄</button>':''}
       </div>
       ${listHtml}
     </div>
@@ -325,20 +328,10 @@ function render(s){
   const gs = document.getElementById('groupSel');
   if (gs){ gs.value = groupMode; gs.onchange = ()=>{ groupMode = gs.value; localStorage.setItem('dash_group2', groupMode); render(s); }; }
 
-  const dd = document.getElementById('dedupe'); if (dd) dd.onclick = dedupe;
 }
 
-async function dedupe(){
-  if (!(await App.confirm('清理重複的休假記錄（同員工＋日期＋時段＋假別只留一筆）？', { title:'清理重複記錄', okText:'清理' }))) return;
-  const r = await App.adminApi('/api/admin/dedupe-leaves', { method:'POST' });
-  if (!r.ok){ App.toast('清理失敗（需管理員權限）','err'); return; }
-  const d = await r.json();
-  App.toast(`完成，清掉 ${d.removed||0} 筆重複`,'ok');
-  load();
-}
-
-document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-1); load(); };
-document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+1); load(); };
+document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-7); load(); };
+document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+7); load(); };
 document.getElementById('today').onclick = ()=>{ cur = new Date(); load(); };
 document.getElementById('date').onchange = (e)=>{ if(e.target.value){ cur = new Date(e.target.value+'T00:00:00'); load(); } };
 
