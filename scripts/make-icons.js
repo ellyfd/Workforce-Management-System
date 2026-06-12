@@ -74,36 +74,62 @@ function draw(S) {
     }
   };
 
-  // 背景藍（全幅，iOS 會自動套圓角遮罩）
+  // 圓角矩形描邊
+  const rstroke = (x0, y0, x1, y1, rad, w, col) => {
+    for (let y = Math.floor(y0) - 1; y < Math.ceil(y1) + 1; y++) {
+      for (let x = Math.floor(x0) - 1; x < Math.ceil(x1) + 1; x++) {
+        let dx = 0, dy = 0;
+        if (x < x0 + rad) dx = x0 + rad - x;
+        else if (x > x1 - rad) dx = x - (x1 - rad);
+        if (y < y0 + rad) dy = y0 + rad - y;
+        else if (y > y1 - rad) dy = y - (y1 - rad);
+        const inRound = (x < x0 + rad || x > x1 - rad) && (y < y0 + rad || y > y1 - rad);
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const edge = inRound ? Math.abs(d - rad)
+          : Math.min(Math.abs(x - x0), Math.abs(x - x1), Math.abs(y - y0), Math.abs(y - y1));
+        const inside = x >= x0 && x <= x1 && y >= y0 && y <= y1 && (!inRound || d <= rad);
+        if (inside && edge <= w) set(x, y, col[0], col[1], col[2], 255);
+      }
+    }
+  };
+
+  // 配色（淺色白底＋藍框，呼應目前淺色介面）
   const blue = [37, 99, 235];      // #2563eb
   const white = [255, 255, 255];
   const pink = [236, 72, 153];     // #ec4899（出差色系）
   const gray = [203, 213, 225];    // 日期格淡灰
+  const bg = [245, 247, 250];      // 淺色底
+
+  // 淺色底（iOS 會自動套圓角遮罩）
   for (let i = 0; i < S * S; i++) {
-    buf[i * 4] = blue[0]; buf[i * 4 + 1] = blue[1]; buf[i * 4 + 2] = blue[2]; buf[i * 4 + 3] = 255;
+    buf[i * 4] = bg[0]; buf[i * 4 + 1] = bg[1]; buf[i * 4 + 2] = bg[2]; buf[i * 4 + 3] = 255;
   }
 
-  // 行事曆白色本體
-  const cx0 = S * 0.20, cx1 = S * 0.80, cy0 = S * 0.26, cy1 = S * 0.78;
-  const rad = S * 0.07;
+  // 行事曆框：留多一點四周空白（依 iOS 標準，圖案不貼邊）。
+  // margin 為圖案到邊緣的留白比例；行事曆置中。
+  const margin = 0.26;
+  const calW = (1 - 2 * margin) * S;
+  const calH = calW * 0.84;                 // 略寬於高
+  const cx0 = S * margin, cx1 = S - S * margin;
+  const cy0 = (S - calH) / 2, cy1 = (S + calH) / 2;
+  const rad = calW * 0.13, headH = calH * 0.26;
+
   rrect(cx0, cy0, cx1, cy1, rad, white);
-  // 上方粉色標頭帶
-  const headH = S * 0.15;
-  rrect(cx0, cy0, cx1, cy0 + headH, rad, pink);
-  // 標頭下緣補成直角（蓋掉底部圓角）
-  rrect(cx0, cy0 + headH - rad, cx1, cy0 + headH, 0, pink);
+  rstroke(cx0, cy0, cx1, cy1, rad, Math.max(3, S * 0.011), blue);
+  // 上方藍色標頭帶
+  rrect(cx0, cy0, cx1, cy0 + headH, rad, blue);
+  rrect(cx0, cy0 + headH - rad, cx1, cy0 + headH, 0, blue);
 
-  // 兩個掛環
-  const ringW = S * 0.045, ringH = S * 0.10;
-  const ringY0 = cy0 - ringH * 0.5;
-  for (const fx of [0.36, 0.64]) {
-    const rx = S * fx;
-    rrect(rx - ringW / 2, ringY0, rx + ringW / 2, ringY0 + ringH, ringW / 2, blue);
-  }
-
-  // 日期格點（3x2 小方塊），右下角一格用粉色強調（＝出差）
-  const gx0 = cx0 + S * 0.07, gy0 = cy0 + headH + S * 0.06;
-  const cell = S * 0.105, gap = S * 0.05;
+  // 日期格點（3x2 小方塊），尺寸依行事曆框換算以保持內邊距且不溢出。
+  // 右下角一格用粉色強調（＝出差）。
+  const padX = calW * 0.13, padBottom = calH * 0.1;
+  const gridW = calW - 2 * padX;
+  const cell = gridW / 3.8;                  // 3 格 + 2 個 0.4cell 間距
+  const gap = cell * 0.4;
+  const gx0 = cx0 + padX;
+  const bodyTop = cy0 + headH + calH * 0.08;
+  const bodyBottom = cy1 - padBottom;
+  const gy0 = bodyTop + ((bodyBottom - bodyTop) - (2 * cell + gap)) / 2;
   for (let r = 0; r < 2; r++) {
     for (let c = 0; c < 3; c++) {
       const x = gx0 + c * (cell + gap);
