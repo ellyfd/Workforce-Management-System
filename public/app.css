@@ -64,8 +64,9 @@ body.has-shell{ padding-left:var(--sidebar-w); }
      與篩選/列表同級、不與頁面標題爭大小。下拉仍 16px（見上：iOS 防縮放）。 */
   .tabs button{ font-size:16px; }
 
-  /* 頁首更精簡，少佔垂直空間（大標維持 26px，與桌機一致、明顯最大） */
+  /* 頁首更精簡，少佔垂直空間 */
   .page-head{ margin-bottom:8px; gap:8px; }
+  .page-head h1{ font-size:18px; }
 }
 
 /* ── 手機底部導覽列 ──────────────────────────────── */
@@ -90,7 +91,7 @@ body.has-shell{ padding-left:var(--sidebar-w); }
 
 /* ── 通用元件 ─────────────────────────────────────── */
 .page-head{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-.page-head h1{ font-size:26px; margin:0; font-weight:600; }
+.page-head h1{ font-size:20px; margin:0; font-weight:600; }
 .page-head .sub{ color:var(--muted); font-size:14px; }
 .spacer{ flex:1; }
 .muted{ color:var(--muted); font-size:14px; }
