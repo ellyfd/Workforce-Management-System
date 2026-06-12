@@ -219,8 +219,13 @@
     if (!editing) {
       const eb = document.getElementById('ppEdit');
       if (eb) eb.onclick = (e) => { e.preventDefault(); renderProfile(ctx, true); };
-      // 切換身分／登出：清掉本裝置綁定與快取後重載 → 回到選名字的綁定畫面
-      const signOut = () => { try { localStorage.removeItem('dev_device_token'); } catch (_) {} writeMeCache(null); location.reload(); };
+      // 切換身分／登出：先請後端解除綁定並清掉長效 Cookie（HttpOnly，JS 清不掉），
+      // 再清本機 token 與快取後重載 → 回到選名字的綁定畫面。
+      const signOut = async () => {
+        try { await fetch(API_BASE + '/api/unbind', { method: 'POST', headers: DEVICE ? { 'X-Device-Token': DEVICE } : {} }); } catch (_) {}
+        try { localStorage.removeItem('dev_device_token'); } catch (_) {}
+        writeMeCache(null); location.reload();
+      };
       const sw = document.getElementById('ppSwitch'); if (sw) sw.onclick = signOut;
       const lo = document.getElementById('ppLogout'); if (lo) lo.onclick = signOut;
       return;
@@ -263,16 +268,21 @@
           <div class="bindbrand">開發處休假表</div>
           <h2>請選擇你的名字</h2>
           <p class="muted">綁定後本裝置會記住你的身分，下次免選（可在右上「個人資料」最下方切換身分或登出）。</p>
-          <input id="bindSearch" type="text" placeholder="輸入中文名或英文名搜尋…" autocomplete="off" />
+          <div class="bindsearch">
+            <input id="bindSearch" type="text" placeholder="輸入兩個字以上搜尋（中文名或英文名）…" autocomplete="off" />
+            <button id="bindClear" type="button" class="bindclear" aria-label="清除" hidden>×</button>
+          </div>
           <div class="bindlist" id="bindList"></div>
         </div>
       </div>`);
     const listEl = document.getElementById('bindList');
+    const inputEl = document.getElementById('bindSearch');
+    const clearEl = document.getElementById('bindClear');
     const draw = (kw = '') => {
       const k = kw.trim().toLowerCase();
-      // 預設不列出全部人名（保護隱私、清單更乾淨）；開始輸入才下拉出符合的名字
-      if (!k) {
-        listEl.innerHTML = '<div class="muted" style="padding:10px;">輸入你的中文名或英文名開始搜尋…</div>';
+      // 預設不列出全部人名（保護隱私、清單更乾淨）；要輸入兩個字以上才開始搜尋
+      if (k.length < 2) {
+        listEl.innerHTML = '<div class="muted" style="padding:10px;">輸入兩個字以上（中文名或英文名）開始搜尋…</div>';
         return;
       }
       listEl.innerHTML = emps
@@ -286,7 +296,9 @@
       });
     };
     draw();
-    document.getElementById('bindSearch').oninput = (e) => draw(e.target.value);
+    inputEl.oninput = (e) => { clearEl.hidden = !e.target.value; draw(e.target.value); };
+    // 「X」一鍵清除：清空輸入、收回列表、把焦點留在輸入框
+    clearEl.onclick = () => { inputEl.value = ''; clearEl.hidden = true; draw(''); inputEl.focus(); };
   }
 
   async function mount() {
