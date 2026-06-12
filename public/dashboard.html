@@ -58,10 +58,9 @@
 
     /* ── 頁首瘦身：問候、日期列、部門篩選更緊湊，KPI 卡縮小 ── */
     .greet h1{ font-size:18px; }
-    /* 日期列 + 部門篩選併到同一排（手機部門為下拉，夠窄；放不下會自動換行） */
-    .ctrlrow{ display:flex; align-items:stretch; gap:8px; flex-wrap:wrap; margin:10px 0; }
-    .ctrlrow .datebar{ flex:1; min-width:200px; margin:0; padding:6px; }
-    .ctrlrow .deptcard{ margin:0; padding:8px 12px; }
+    /* 日期列瘦身；部門篩選（在當週概覽下方）縮內距 */
+    .ctrlrow .datebar{ margin:10px 0; padding:6px; }
+    .deptcard{ padding:8px 12px; }
     /* KPI 卡：縮內距與數字字級，2×2 更緊湊 */
     .kpi-grid{ gap:8px; margin-bottom:8px !important; }
     .kpi-grid .card{ padding:11px 13px; }
@@ -83,10 +82,10 @@
       <button class="btn sm" id="next" aria-label="後一天">›</button>
       <button class="btn sm" id="today">今天</button>
     </div>
-
-    <div class="deptcard"><span class="muted">部門：</span><span id="deptboxes" class="row" style="gap:14px;"></span></div>
   </div>
 
+  <div id="owbox"></div>
+  <div class="deptcard"><span class="muted">部門：</span><span id="deptboxes" class="row" style="gap:14px;"></span></div>
   <div id="content"><div class="status">載入中…</div></div>
 </main>
 
@@ -157,9 +156,10 @@ let loadSeq = 0; // 防止快速連點時舊回應蓋掉新回應
 async function load(){
   document.getElementById('date').value = ymd(cur);
   const c = document.getElementById('content');
+  const ob = document.getElementById('owbox');
   const seq = ++loadSeq;
   // 換日期不清空畫面：舊內容降透明度示意載入中，新資料到了一次換上（不閃）
-  if (c.dataset.loaded) c.style.opacity = '.55';
+  if (c.dataset.loaded){ c.style.opacity = '.55'; ob.style.opacity = '.55'; }
   else c.innerHTML = '<div class="status">載入中…</div>';
   try {
     const dept = [...DEPTSEL].join(',');
@@ -172,7 +172,7 @@ async function load(){
   } catch (e) {
     if (seq === loadSeq) c.innerHTML = `<div class="status err">讀取失敗：${esc(e.message)}</div>`;
   } finally {
-    if (seq === loadSeq) c.style.opacity = '';
+    if (seq === loadSeq){ c.style.opacity = ''; ob.style.opacity = ''; }
   }
 }
 
@@ -264,7 +264,8 @@ function render(s){
     </div>` : '';
 
   // 當週概覽（週一～週日，固定不捲動）：藍框＝目前檢視日，點任一格切換；
-  // 紅點＝該日有部門達 1/3 上限；灰底＝非工作日
+  // 紅點＝該日有部門達 1/3 上限；灰底＝非工作日。
+  // 渲染到獨立的 #owbox，讓靜態的部門篩選列固定夾在「當週概覽」與其餘內容之間。
   const WD = ['日','一','二','三','四','五','六'];
   const ow = s.outlook || [];
   const owHtml = ow.length ? `
@@ -283,9 +284,9 @@ function render(s){
           <div class="cnt">${d.count?`<b>${d.count}</b> 人`:'—'}</div>
         </button>`;}).join('')}</div>
     </div>` : '';
+  document.getElementById('owbox').innerHTML = owHtml;
 
   document.getElementById('content').innerHTML = `
-    ${owHtml}
     <div class="kpi-grid" style="margin-bottom:12px;">
       <div class="card kpi"><div class="label">應到人數</div><div class="val">${s.expected}${s.is_non_working?'<span class="nwk">非工作日</span>':''}</div></div>
       <div class="card kpi"><div class="label">出勤率</div><div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div></div>
