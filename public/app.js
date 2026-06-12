@@ -117,6 +117,9 @@
   /* ── 個人資料抽屜 ─────────────────────────────────── */
   const STATUS_LABEL = { active: '在職', parental_leave: '育嬰假', inactive: '離職', hidden: '隱藏' };
   function ids(s) { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; } }
+  // 部門群組：部門依地點分設（如「TD-台北」「TD-非台北」），取「-」前的名稱視為同一部門，
+  // 讓職代候選不被地點隔開。沒有「-」的部門名就是自己一組。
+  function deptGroup(name) { return String(name || '').split(/[-–—]/)[0].trim(); }
   const dayOf = (period) => (period === 'morning' || period === 'afternoon') ? 0.5 : 1;
 
   async function openProfile() {
@@ -164,9 +167,12 @@
       return `<div class="li"><span class="dot" style="background:${esc(t.color || '#64748b')}"></span>${esc(t.name || '未分類')}<span class="v">${d} 天</span></div>`;
     }).join('');
 
-    // 本人可自行編輯：英文名 + 職代（候選＝與本人有共同部門的在職同仁）。部門/狀態/角色僅管理員可改。
-    const myDeptSet = new Set(me.department_ids || []);
-    const cands = emps.filter((e) => e.id !== me.id && ids(e.department_ids).some((d) => myDeptSet.has(d)));
+    // 本人可自行編輯：英文名 + 職代。候選＝與本人「同部門群組」的在職同仁。
+    // 部門依地點分設（如 TD-台北／TD-非台北），但仍屬同一部門 TD，
+    // 故以名稱「-」前的群組比對，讓不同地點也能互相職代。
+    const groupOf = (id) => deptGroup((depts.find((d) => d.id === id) || {}).name);
+    const myGroups = new Set((me.department_ids || []).map(groupOf).filter(Boolean));
+    const cands = emps.filter((e) => e.id !== me.id && ids(e.department_ids).some((d) => myGroups.has(groupOf(d))));
     const opts = (cur, exclude) => '<option value="">無</option>' + cands.filter((e) => e.id !== exclude)
       .map((e) => `<option value="${esc(e.id)}"${e.id === cur ? ' selected' : ''}>${esc(e.name)}</option>`).join('');
 
@@ -382,7 +388,7 @@
 
   let resolveReady;
   window.App = {
-    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, toast, confirm: confirmDialog, me: null, isAdmin: false,
+    API_BASE, esc, api, adminApi, params, yearOptions, monthOptions, toast, confirm: confirmDialog, deptGroup, me: null, isAdmin: false,
     // 頁面可 await App.ready 取得身分（殼畫好後 resolve；未綁定時 me 為 null）
     ready: new Promise((r) => { resolveReady = r; }),
   };
