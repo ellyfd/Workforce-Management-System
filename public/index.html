@@ -175,12 +175,14 @@
     border: 1px solid var(--border); border-radius: 10px; background: #fff; cursor: pointer; }
   #editPen.on { border-color: var(--blue); background: #eff6ff; }
 
-  /* 平板/手機：表單控制項被全站樣式放大為 16px（避免 iOS 聚焦縮放），
-     同步把頁首的標籤、按鈕、勾選也放大到 16px，整排字級才看起來一致。 */
+  /* 平板/手機：頁首篩選/控制列用內文字級（14px），與下方表格同級、不與標題爭大小；
+     僅 <select> 維持 16px 以避免 iOS 聚焦縮放。 */
   @media (max-width: 820px) {
-    .toolbar button, .toolbar select, .toolbar .muted,
+    .toolbar button, .toolbar .muted,
     .legend .muted, .legend .item, .legend label,
-    .deptdrop .deptbtn, .deptmenu label { font-size: 16px; }
+    .deptdrop .deptbtn, .deptmenu label { font-size: 14px; }
+    /* 下拉本身維持 16px：避免 iOS 點選時整頁聚焦放大 */
+    .toolbar select { font-size: 16px; }
   }
 
   /* 手機：縮窄欄寬讓表格塞下更多日子，捲動區不被底部導覽列遮住 */

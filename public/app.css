@@ -60,8 +60,9 @@ body.has-shell{ padding-left:var(--sidebar-w); }
 
   /* 表單控制項 16px：iOS 不再聚焦放大，且選單文字更易讀 */
   input, select{ font-size:16px; }
-  /* 按鈕與頁籤同步放大為 16px，與下拉同級——同一排控制項大小看起來一致 */
-  .btn, .btn.sm, .tabs button{ font-size:16px; }
+  /* 頁籤維持 16px 以利點按；一般按鈕回到內文字級（14px），
+     與篩選/列表同級、不與頁面標題爭大小。下拉仍 16px（見上：iOS 防縮放）。 */
+  .tabs button{ font-size:16px; }
 
   /* 頁首更精簡，少佔垂直空間 */
   .page-head{ margin-bottom:8px; gap:8px; }
@@ -234,7 +235,7 @@ table.data th.col .fbtn.on{ color:#fff; background:var(--blue); }
 .pp-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:90; }
 .pp{ position:fixed; top:0; right:0; bottom:0; width:100%; max-width:420px; background:#fff;
   z-index:95; box-shadow:-8px 0 30px rgba(0,0,0,.15); padding:18px; overflow-y:auto; }
-.pp h2{ font-size:17px; margin:0 0 14px; font-weight:600; }
+.pp h2{ font-size:19px; margin:0 0 14px; font-weight:600; }
 .pp-close{ position:absolute; top:12px; right:14px; background:none; border:1px solid var(--border);
   border-radius:50%; width:30px; height:30px; cursor:pointer; color:var(--muted); }
 .pp-head{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
