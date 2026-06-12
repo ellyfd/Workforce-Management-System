@@ -878,9 +878,10 @@ function startTour(){
   window.addEventListener('scroll', renderStep, true);
 }
 async function maybeStartTour(){
-  try { if (localStorage.getItem(TOUR_KEY)) return; } catch(_) { return; }
+  try { if (localStorage.getItem(TOUR_KEY)) return; } catch(_) {}
   const { me } = await App.ready; // 等身分判定；未綁定會先進綁定畫面（綁完自動 reload 再跑）
   if (!me || !LAST) return;       // 沒綁定或資料載入失敗就不跑
+  if (!me.first_seen) return;     // 曾登入過（後端 last_login 已有值）→ 不論哪台裝置都不再跳
   setTimeout(startTour, 300);
 }
 document.getElementById('replayTour').onclick = ()=>{ App.ready.then(()=>startTour()); };

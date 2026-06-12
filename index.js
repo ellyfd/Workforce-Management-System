@@ -183,6 +183,9 @@ export default {
         const t = token(request);
         const me = await meFromToken(env, t);
         if (!me) return json({ error: 'not_bound' }, 401);
+        // first_seen＝這個員工從沒登入過（last_login 仍空）。用來決定要不要跑新手導覽：
+        // 一旦登入過就有 last_login，之後在任何裝置重新登入都不再跳導覽。判斷要在更新 last_login 之前。
+        const firstSeen = !me.last_login;
         // 記錄最近活動時間（節流：與上次相差超過 10 分鐘才寫，避免每次換頁都寫 DB）
         const nowMs = Date.now();
         const lastMs = me.last_login ? Date.parse(me.last_login) : 0;
@@ -194,6 +197,7 @@ export default {
           id: me.id, name: me.name, english_name: me.english_name, role: me.role || 'user',
           status: me.status || 'active', department_ids: safeIds(me.department_ids),
           deputy_1: me.deputy_1 || null, deputy_2: me.deputy_2 || null,
+          first_seen: firstSeen,
         }, 200, t ? setCookie(t) : {});
       }
 
