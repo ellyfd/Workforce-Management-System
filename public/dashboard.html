@@ -86,9 +86,9 @@
 
   <div class="ctrlrow">
     <div class="datebar">
-      <button class="btn sm" id="prev" aria-label="前一天">‹</button>
+      <button class="btn sm" id="prev" aria-label="上一週" title="上一週">‹</button>
       <input type="date" id="date" class="dlabel" aria-label="選擇日期" />
-      <button class="btn sm" id="next" aria-label="後一天">›</button>
+      <button class="btn sm" id="next" aria-label="下一週" title="下一週">›</button>
       <button class="btn sm" id="today">今天</button>
     </div>
   </div>
@@ -330,8 +330,8 @@ function render(s){
 
 }
 
-document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-1); load(); };
-document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+1); load(); };
+document.getElementById('prev').onclick = ()=>{ cur.setDate(cur.getDate()-7); load(); };
+document.getElementById('next').onclick = ()=>{ cur.setDate(cur.getDate()+7); load(); };
 document.getElementById('today').onclick = ()=>{ cur = new Date(); load(); };
 document.getElementById('date').onchange = (e)=>{ if(e.target.value){ cur = new Date(e.target.value+'T00:00:00'); load(); } };
 
