@@ -71,9 +71,10 @@
     border-radius: 10px;
     background: #fff;
     max-height: calc(100vh - 190px);
-    /* 只攔橫向（避免滑到邊緣觸發瀏覽器返回手勢）；
-       縱向放行：內層捲到底時讓整頁接手，才看得到下方頁尾、不會「卡住滑不動」。 */
-    overscroll-behavior-x: contain;
+    /* 橫向用 none：除了擋掉滑到邊緣觸發瀏覽器返回手勢，也關掉 iOS 的橡皮筋回彈，
+       避免橫拉欄位到邊緣時內容彈開、和外框分離。
+       縱向維持放行：內層捲到底時讓整頁接手，才看得到下方頁尾、不會「卡住滑不動」。 */
+    overscroll-behavior-x: none;
     -webkit-overflow-scrolling: auto;
   }
   table { border-collapse: separate; border-spacing: 0; width: max-content; }
@@ -524,7 +525,6 @@ function render(data){
     ? `資料更新時間：${new Date(data.updated_at).toLocaleString('zh-TW')}`
     : '';
   renderHelp();
-  fixStickyHeader(); // 消除 iOS Safari 凍結表頭上方殘留的空白
 }
 
 // ── 編輯：選假別 + 單擊填入 / 雙擊取消 / 區間請假（改任一員工）─────────
@@ -753,21 +753,6 @@ function scrollToToday(){
   const sc = document.querySelector('.scroll');
   const th = document.querySelector(`th.day[data-date="${todayStr()}"]`);
   if (sc && th) sc.scrollLeft = Math.max(0, th.offsetLeft - 140);
-  fixStickyHeader();
-}
-
-// iOS Safari：sticky 凍結表頭在初次渲染／程式捲動後，表頭上方常殘留一塊空白，
-// 使用者手動捲一下就會修正。這裡在版面穩定後程式化「輕推 1px 再推回」，
-// 強制 iOS 重算 sticky 位置把空白消掉；捲動位置維持不變、肉眼無感。
-function fixStickyHeader(){
-  const sc = document.querySelector('.scroll');
-  if (!sc) return;
-  requestAnimationFrame(()=>{
-    const top = sc.scrollTop;
-    const dir = (top + sc.clientHeight >= sc.scrollHeight - 1) ? -1 : 1; // 已到底就往反方向推
-    sc.scrollTop = top + dir;
-    requestAnimationFrame(()=>{ sc.scrollTop = top; });
-  });
 }
 
 // 套用假別篩選後，橫向捲到「第一個人第一筆該假別」那一格（全年模式下記錄可能在很遠的月份）
