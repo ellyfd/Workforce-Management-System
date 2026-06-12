@@ -53,7 +53,21 @@
   .ppill{ display:inline-flex; align-items:center; gap:7px; background:#f8fafc; border:1px solid var(--border); border-radius:999px; padding:3px 5px 3px 11px; font-size:13px; font-weight:600; }
   .ppill .pe{ color:var(--muted); font-weight:400; font-size:12px; }
   .ppill .chip{ font-size:11px; padding:1px 8px; border-radius:999px; }
-  @media (max-width:560px){ .dstat .dn{ width:84px; } .owday .cnt{ font-size:11px; } .ppill .pe{ display:none; } .prow .lgwarn{ max-width:100%; text-align:left; } }
+  @media (max-width:560px){
+    .dstat .dn{ width:84px; } .owday .cnt{ font-size:11px; } .ppill .pe{ display:none; } .prow .lgwarn{ max-width:100%; text-align:left; }
+
+    /* ── 頁首瘦身：問候、日期列、部門篩選更緊湊，KPI 卡縮小 ── */
+    .greet h1{ font-size:18px; }
+    /* 日期列 + 部門篩選併到同一排（手機部門為下拉，夠窄；放不下會自動換行） */
+    .ctrlrow{ display:flex; align-items:stretch; gap:8px; flex-wrap:wrap; margin:10px 0; }
+    .ctrlrow .datebar{ flex:1; min-width:200px; margin:0; padding:6px; }
+    .ctrlrow .deptcard{ margin:0; padding:8px 12px; }
+    /* KPI 卡：縮內距與數字字級，2×2 更緊湊 */
+    .kpi-grid{ gap:8px; margin-bottom:8px !important; }
+    .kpi-grid .card{ padding:11px 13px; }
+    .kpi .label{ font-size:13px; }
+    .kpi .val{ font-size:23px; margin-top:4px; }
+  }
 </style>
 </head>
 <body class="has-shell">
@@ -62,14 +76,16 @@
     <h1 id="hello">儀表板</h1>
   </div>
 
-  <div class="datebar">
-    <button class="btn sm" id="prev" aria-label="前一天">‹</button>
-    <input type="date" id="date" class="dlabel" aria-label="選擇日期" />
-    <button class="btn sm" id="next" aria-label="後一天">›</button>
-    <button class="btn sm" id="today">今天</button>
-  </div>
+  <div class="ctrlrow">
+    <div class="datebar">
+      <button class="btn sm" id="prev" aria-label="前一天">‹</button>
+      <input type="date" id="date" class="dlabel" aria-label="選擇日期" />
+      <button class="btn sm" id="next" aria-label="後一天">›</button>
+      <button class="btn sm" id="today">今天</button>
+    </div>
 
-  <div class="deptcard"><span class="muted">部門：</span><span id="deptboxes" class="row" style="gap:14px;"></span></div>
+    <div class="deptcard"><span class="muted">部門：</span><span id="deptboxes" class="row" style="gap:14px;"></span></div>
+  </div>
 
   <div id="content"><div class="status">載入中…</div></div>
 </main>
