@@ -15,6 +15,12 @@
 <style>
   .greet h1{ font-size:20px; margin:0; font-weight:600; }
   .greet .sub{ color:var(--muted); font-size:14px; margin-top:2px; }
+  /* 區塊標題統一層級：介於頁面問候與內文之間，避免「忽大忽小」 */
+  .sec{ font-size:15px; font-weight:600; color:var(--ink); }
+  .cap{ font-size:13px; font-weight:400; color:var(--muted); }
+  .sec .cap{ margin-left:7px; }
+  .kpi .label{ font-size:13px; }
+  .kpi .val{ font-size:24px; }
   .datebar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:8px; margin:12px 0; box-shadow:var(--shadow); }
   .datebar .dlabel{ flex:1; text-align:center; }
   .datebar input[type=date]{ border:none; }
@@ -74,7 +80,7 @@
     .kpi-grid{ gap:8px; margin-bottom:8px !important; }
     .kpi-grid .card{ padding:11px 13px; }
     .kpi .label{ font-size:13px; }
-    .kpi .val{ font-size:23px; margin-top:4px; }
+    .kpi .val{ font-size:22px; margin-top:4px; }
   }
 </style>
 </head>
@@ -219,10 +225,30 @@ function render(s){
   const warnHead = (dept)=>{
     const g = deptWarn.get(dept);
     if (!g) return '';
-    const parts = [...g.deptReasons].map(esc);
-    g.people.forEach(p=>parts.push(`${esc(p.name)}：${p.reasons.map(esc).join('、')}`));
-    return parts.length
-      ? `<div class="dwarn"><span class="wi">⚠</span><div class="wlines">${parts.map(p=>`<div>${p}</div>`).join('')}</div></div>`
+    const lines = [...g.deptReasons].map(esc);
+    // 互為職代偵測：A 把 B 列為「當天也請假」、B 也把 A 列為「當天也請假」→ 併成一句，
+    // 不再各印一行對調的重複句子。
+    const away = new Map();   // 名字 → Set(被列為「也請假」的職代)
+    const other = new Map();  // 名字 → 其餘原因（出差、個人段）
+    g.people.forEach(p=>{
+      const s = new Set(), o = [];
+      p.reasons.forEach(r=>{ const m = r.match(/^職代 (.+?) 當天也請假$/); if (m) m[1].split('、').forEach(n=>s.add(n)); else o.push(r); });
+      away.set(p.name, s); other.set(p.name, o);
+    });
+    away.forEach((deps, a)=>[...deps].forEach(b=>{
+      if ((away.get(b)||new Set()).has(a)){
+        away.get(a).delete(b); away.get(b).delete(a);
+        lines.push(`${esc(a)}、${esc(b)} 互為職代，當天同時請假`);
+      }
+    }));
+    g.people.forEach(p=>{
+      const parts = other.get(p.name).map(esc);
+      const deps = [...away.get(p.name)];
+      if (deps.length) parts.push(`職代 ${deps.map(esc).join('、')} 當天也請假`);
+      if (parts.length) lines.push(`${esc(p.name)}：${parts.join('、')}`);
+    });
+    return lines.length
+      ? `<div class="dwarn"><span class="wi">⚠</span><div class="wlines">${lines.map(l=>`<div>${l}</div>`).join('')}</div></div>`
       : '';
   };
 
@@ -281,8 +307,8 @@ function render(s){
   const ow = s.outlook || [];
   const owHtml = ow.length ? `
     <div class="card" style="margin-bottom:12px;">
-      <div class="row" style="justify-content:space-between;margin-bottom:8px;">
-        <b>當週概覽</b><span class="muted" style="font-size:12px;">點日期切換檢視</span>
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
+        <span class="sec">當週概覽</span><span class="cap">點日期切換</span>
       </div>
       <div class="owrap">${ow.map(d=>{
         const dt = new Date(d.date+'T00:00:00');
@@ -305,9 +331,9 @@ function render(s){
       <div class="card kpi"><div class="label">假別分佈</div>${typeChips}</div>
     </div>
     <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:6px;">
+      <div class="row" style="justify-content:space-between;margin-bottom:10px;">
         <div class="row" style="gap:8px;">
-          <b>${groupMode==='dept'?'部門人力':'休假人員'} <span class="muted">今日請假 ${list.length} 人</span></b>
+          <span class="sec">${groupMode==='dept'?'部門人力':'休假人員'}<span class="cap">今日請假 ${list.length} 人</span></span>
           <select id="groupSel" class="grpsel" title="分組方式">
             <option value="none">不分組</option>
             <option value="dept">依部門</option>
