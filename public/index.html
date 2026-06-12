@@ -157,6 +157,10 @@
   .tour-card .tdots i.on{ background:var(--blue); }
   .tour-card .tbtns{ display:flex; gap:8px; }
 
+  /* 「編輯」切換鈕：桌機隱藏（管理工具列本來就直接顯示在頁首），
+     只有手機用它把管理工具列收合起來、需要時才展開。 */
+  #editToggle { display: none; }
+
   /* 平板/手機：表單控制項被全站樣式放大為 16px（避免 iOS 聚焦縮放），
      同步把頁首的標籤、按鈕、勾選也放大到 16px，整排字級才看起來一致。 */
   @media (max-width: 820px) {
@@ -170,9 +174,25 @@
     :root { --name-w: 80px; --day-w: 32px; --row-h: 36px; --head-h: 42px; }
     .page { padding: 10px 8px 4px; }
     header.top h1 { font-size: 18px; }
-    .scroll { max-height: calc(100dvh - 230px); }
     .chip { font-size: 11px; }
     thead th.tot, tbody td.tot { min-width: 40px; width: 40px; }
+
+    /* ── 頁首壓縮：把控制項擠進更少列，讓表格更早出現 ── */
+    /* 年/月導覽列：縮小內距與間距，盡量擠在同一排（避免「全年」被擠到下一行） */
+    .toolbar { margin: 6px 0; gap: 6px; }
+    .toolbar button, .toolbar select { padding: 6px 8px; }
+
+    /* 部門 + 只看假別：併到同一排，去掉各自的上下外距 */
+    .filters { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; margin: 6px 0; }
+    .filters .legend { margin: 0; }
+
+    /* 「編輯」鈕現身；管理工具列預設收起，按「編輯」才展開（省兩列高度） */
+    #editToggle { display: inline-flex; align-items: center; }
+    .toolbar.admin-only { display: none; margin-top: 6px; }
+    body.editing .toolbar.admin-only { display: flex; }
+
+    /* 頁首變矮後，捲動區可以更高、一次看到更多人與天數 */
+    .scroll { max-height: calc(100dvh - 188px); }
   }
 </style>
 </head>
@@ -189,12 +209,16 @@
     <button id="next">›</button>
     <button class="today-btn" id="todayBtn">今天</button>
     <button id="yearBtn">全年</button>
+    <span class="spacer"></span>
+    <button id="editToggle" class="admin-only" title="新增／修改休假">✏️ 編輯</button>
   </div>
 
-  <div class="legend" id="deptbar"><span class="muted">部門：</span></div>
-  <div class="legend" id="typebar"><span class="muted">只看假別：</span></div>
+  <div class="filters">
+    <div class="legend" id="deptbar"><span class="muted">部門：</span></div>
+    <div class="legend" id="typebar"><span class="muted">只看假別：</span></div>
+  </div>
 
-  <div class="toolbar admin-only">
+  <div class="toolbar admin-only" id="adminbar">
     <span class="admin-badge">管理員專用 · 新增 / 修改休假</span>
     <span class="muted">假別：</span>
     <select id="ltype"><option value="">下拉選單</option></select>
@@ -747,6 +771,13 @@ document.getElementById('yearBtn').onclick = () => {
   document.getElementById('yearBtn').textContent = fullYear ? '單月' : '全年';
   load().then(scrollToToday);
 };
+// 手機：「編輯」切換管理工具列的展開/收合（桌機此鈕隱藏，工具列恆顯示）。
+// 此鈕帶 .admin-only，非管理員會被 app.js 移除，故先判空再綁定。
+const editToggleBtn = document.getElementById('editToggle');
+if (editToggleBtn) editToggleBtn.onclick = () => {
+  const on = document.body.classList.toggle('editing');
+  editToggleBtn.classList.toggle('today-btn', on);
+};
 
 // ── 第一次來的互動式引導：只能看不能改、月/年切換、部門與假別篩選（同「我的排休」） ──
 // 步驟同時是下方「操作說明」的文字來源（renderHelp），改這裡兩邊一起更新。
@@ -754,7 +785,10 @@ const TOUR_KEY = 'dev_all_tour_done';
 function tourSteps(){
   return [
     (window.App && App.isAdmin)
-      ? { sel:'.toolbar.admin-only', title:'管理員編輯', body:'選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' }
+      // 手機上管理工具列預設收合，引導指向可見的「編輯」鈕並提示先展開
+      ? (deptMobile.matches
+          ? { sel:'#editToggle', title:'管理員編輯', body:'點「編輯」展開管理工具列：選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' }
+          : { sel:'.toolbar.admin-only', title:'管理員編輯', body:'選好假別後點任何人的格子即可填入；雙擊已填的格子取消（半天點上半/下半）；「區間」可一次填一整段。' })
       : { sel:'.scroll', title:'這裡只能看', body:'「全部排休」是全處總表，僅供查看、不能修改。要排自己的休假，請到選單的「我的排休」。' },
     { sel:'.toolbar', title:'切換月份／全年', body:'用 ‹ › 或年/月下拉換月份；按「全年」一次看整年，「今天」跳回本月。' },
     { sel:'#deptbar', title:'篩選部門', body:'勾選想看的部門，只顯示勾到的；不勾＝全部。' },
