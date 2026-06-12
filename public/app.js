@@ -270,8 +270,13 @@
     const listEl = document.getElementById('bindList');
     const draw = (kw = '') => {
       const k = kw.trim().toLowerCase();
+      // 預設不列出全部人名（保護隱私、清單更乾淨）；開始輸入才下拉出符合的名字
+      if (!k) {
+        listEl.innerHTML = '<div class="muted" style="padding:10px;">輸入你的中文名或英文名開始搜尋…</div>';
+        return;
+      }
       listEl.innerHTML = emps
-        .filter((e) => !k || (e.name || '').toLowerCase().includes(k) || (e.english_name || '').toLowerCase().includes(k))
+        .filter((e) => (e.name || '').toLowerCase().includes(k) || (e.english_name || '').toLowerCase().includes(k))
         .map((e) => `<button class="binditem" data-id="${esc(e.id)}"><b>${esc(e.name)}</b>${e.english_name ? ` <span class="muted">${esc(e.english_name)}</span>` : ''}</button>`)
         .join('') || '<div class="muted" style="padding:10px;">查無此人</div>';
       listEl.querySelectorAll('.binditem').forEach((b) => b.onclick = async () => {
