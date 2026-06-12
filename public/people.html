@@ -265,7 +265,11 @@ function renderEmp(){
 }
 
 function deputyOptions(selfId, deptIds, current, excludeId){
-  const cands = emps.filter(e => e.status==='active' && e.id!==selfId && e.id!==excludeId && empDeptIds(e).some(d=>deptIds.includes(d)));
+  // 候選＝同「部門群組」的在職同仁：部門依地點分設（如 TD-台北／TD-非台北）仍屬同一部門，
+  // 以名稱「-」前的群組比對（App.deptGroup），讓不同地點也能互相職代。
+  const groupOf = (id)=>App.deptGroup((depts.find(d=>d.id===id)||{}).name);
+  const groups = new Set(deptIds.map(groupOf).filter(Boolean));
+  const cands = emps.filter(e => e.status==='active' && e.id!==selfId && e.id!==excludeId && empDeptIds(e).some(d=>groups.has(groupOf(d))));
   return `<option value="">無</option>` + cands.map(e=>`<option value="${esc(e.id)}" ${current===e.id?'selected':''}>${esc(e.name)}${e.english_name?`（${esc(e.english_name)}）`:''}</option>`).join('');
 }
 
@@ -284,7 +288,7 @@ function empForm(e){
       <div class="field" style="flex:1;"><label>狀態</label><select id="f_status">${statusOpts}</select></div>
       <div class="field" style="flex:1;"><label>角色</label><select id="f_role"><option value="user"${cur.role!=='admin'?' selected':''}>一般</option><option value="admin"${cur.role==='admin'?' selected':''}>管理員</option></select></div>
     </div>
-    <div class="muted" style="font-size:14px;">職代僅列出「在職且與本人有共同部門」的同仁，需先勾選部門。管理員才能進設定管理與編輯排休。</div>
+    <div class="muted" style="font-size:14px;">職代列出「在職且與本人同部門群組」的同仁（如 TD-台北 與 TD-非台北 視為同部門），需先勾選部門。管理員才能進設定管理與編輯排休。</div>
   `, async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if (!name){ App.toast('請輸入姓名','err'); return false; }
