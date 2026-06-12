@@ -15,6 +15,8 @@
 <style>
   /* 行事曆專用；其餘元件吃共用 app.css 以維持各頁一致 */
   .app-main{ max-width:680px; }
+  /* 本頁大標 26px（個人頁面，與儀表板/全部排休同層）；不影響共用 .page-head 的設定頁 */
+  .page-head h1{ font-size:26px; }
   .cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
   .cal .wd{ text-align:center; font-size:14px; color:var(--muted); padding:4px 0; }
   .cal .wd.we{ color:var(--red); }
