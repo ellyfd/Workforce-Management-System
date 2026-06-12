@@ -23,16 +23,40 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, X-Device-Token, X-Sync-Secret',
 };
 
-const json = (obj, status = 200) =>
+const json = (obj, status = 200, extraHeaders = {}) =>
   new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS, ...extraHeaders },
   });
 
-const token = (req) => req.headers.get('X-Device-Token') || '';
+// 身分 token：優先讀前端帶的 X-Device-Token；localStorage 被清（如 iPhone 7 天 ITP）時改讀長效 Cookie。
+const COOKIE_NAME = 'dev_token';
+const COOKIE_MAXAGE = 34560000; // 約 400 天
+function cookieToken(req) {
+  const c = req.headers.get('Cookie') || '';
+  const m = c.match(/(?:^|;\s*)dev_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+const token = (req) => req.headers.get('X-Device-Token') || cookieToken(req) || '';
+const setCookie = (t) => ({ 'Set-Cookie': `${COOKIE_NAME}=${encodeURIComponent(t)}; Max-Age=${COOKIE_MAXAGE}; Path=/; Secure; HttpOnly; SameSite=Lax` });
+const clearCookie = () => ({ 'Set-Cookie': `${COOKIE_NAME}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax` });
+
+// 多裝置綁定表：一個 token 綁一人，但同一人可有多台裝置（各自的 token）同時保持綁定。
+// 用 CREATE IF NOT EXISTS 惰性建表，免去手動 migration（本專案無 migrations 資料夾）。
+let bindTableReady = false;
+async function ensureBindTable(env) {
+  if (bindTableReady) return;
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS device_bindings (token TEXT PRIMARY KEY, employee_id TEXT NOT NULL, last_seen TEXT)').run();
+  bindTableReady = true;
+}
 
 async function meFromToken(env, t) {
   if (!t) return null;
+  // 先查多裝置綁定表；表尚未建立（catch）或查無 → 退回舊的單欄綁定，既有裝置不必重綁。
+  try {
+    const b = await env.DB.prepare('SELECT employee_id FROM device_bindings WHERE token = ?').bind(t).first();
+    if (b) return await env.DB.prepare('SELECT * FROM employees WHERE id = ?').bind(b.employee_id).first();
+  } catch (_) { /* 表不存在，走下方後援 */ }
   return env.DB.prepare('SELECT * FROM employees WHERE device_token = ?').bind(t).first();
 }
 
@@ -132,14 +156,32 @@ export default {
         const { employee_id } = await request.json();
         const emp = await env.DB.prepare('SELECT * FROM employees WHERE id = ?').bind(employee_id).first();
         if (!emp) return json({ error: 'employee_not_found' }, 404);
-        // 一個裝置只綁一人：先把這個 token 從其他人身上清掉
+        await ensureBindTable(env);
+        const now = new Date().toISOString();
+        // 多裝置：這個 token 綁到該員工（同一人可有多台裝置各自的 token）。
+        // 同一 token 重綁別人時用 ON CONFLICT 覆蓋；並清掉殘留的舊單欄綁定。
+        await env.DB.prepare('INSERT INTO device_bindings (token, employee_id, last_seen) VALUES (?,?,?) ON CONFLICT(token) DO UPDATE SET employee_id=excluded.employee_id, last_seen=excluded.last_seen')
+          .bind(t, employee_id, now).run();
         await env.DB.prepare('UPDATE employees SET device_token = NULL WHERE device_token = ?').bind(t).run();
-        await env.DB.prepare('UPDATE employees SET device_token = ?, last_login = ? WHERE id = ?').bind(t, new Date().toISOString(), employee_id).run();
-        return json({ id: emp.id, name: emp.name, english_name: emp.english_name });
+        await env.DB.prepare('UPDATE employees SET last_login = ? WHERE id = ?').bind(now, employee_id).run();
+        // 後端發長效 Cookie：localStorage 被清也還記得身分
+        return json({ id: emp.id, name: emp.name, english_name: emp.english_name }, 200, setCookie(t));
+      }
+
+      // 解除本裝置綁定（切換身分／登出）：刪掉這個 token 的綁定並清掉 Cookie，
+      // 否則 HttpOnly Cookie 還在，清了 localStorage 仍會被自動認回身分。
+      if (pathname === '/api/unbind' && method === 'POST') {
+        const t = token(request);
+        if (t) {
+          try { await env.DB.prepare('DELETE FROM device_bindings WHERE token = ?').bind(t).run(); } catch (_) {}
+          await env.DB.prepare('UPDATE employees SET device_token = NULL WHERE device_token = ?').bind(t).run();
+        }
+        return json({ ok: true }, 200, clearCookie());
       }
 
       if (pathname === '/api/me' && method === 'GET') {
-        const me = await meFromToken(env, token(request));
+        const t = token(request);
+        const me = await meFromToken(env, t);
         if (!me) return json({ error: 'not_bound' }, 401);
         // 記錄最近活動時間（節流：與上次相差超過 10 分鐘才寫，避免每次換頁都寫 DB）
         const nowMs = Date.now();
@@ -147,11 +189,12 @@ export default {
         if (!lastMs || nowMs - lastMs > 600000) {
           await env.DB.prepare('UPDATE employees SET last_login = ? WHERE id = ?').bind(new Date(nowMs).toISOString(), me.id).run();
         }
+        // 每次造訪都續期 Cookie：只要 400 天內有來過就一直記得，不會掉
         return json({
           id: me.id, name: me.name, english_name: me.english_name, role: me.role || 'user',
           status: me.status || 'active', department_ids: safeIds(me.department_ids),
           deputy_1: me.deputy_1 || null, deputy_2: me.deputy_2 || null,
-        });
+        }, 200, t ? setCookie(t) : {});
       }
 
       // 本人可編輯的個人資料（開放：英文名、職代）。部門/狀態/角色仍僅限管理員於人員管理調整。
