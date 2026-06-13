@@ -216,11 +216,13 @@
       </div>
       ${(me.role === 'admin' && !editing) ? `
       <label class="pp-editmode" id="ppEditModeWrap">
-        <span class="t"><b>排休編輯模式</b><span class="muted">開啟後可在「全部排休」點任何人的格子新增／修改休假</span></span>
+        <span class="t"><b>排休編輯模式</b><span class="muted">可在「全部排休」直接編輯他人休假</span></span>
         <input type="checkbox" id="ppEditMode" role="switch" ${getEditMode() ? 'checked' : ''} />
         <span class="sw" aria-hidden="true"></span>
       </label>
-      <button class="btn sm" id="ppDedupe" style="width:100%;margin-top:10px;color:#b45309;border-color:#fcd34d;">清理重複記錄</button>` : ''}
+      <div class="row" style="justify-content:flex-end;margin-top:4px;">
+        <button class="pp-link" id="ppDedupe">清理重複記錄</button>
+      </div>` : ''}
       ${editing
         ? `<div class="row" style="justify-content:flex-end;gap:8px;margin:12px 0 4px;">
              <button class="btn sm" id="ppCancel">取消</button>
