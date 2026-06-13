@@ -40,6 +40,7 @@
     leave: svg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/>'),
     sync: svg('<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>'),
     more: svg('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>'),
+    user: svg('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
   };
   const NAV_MAIN = [
     { href: 'dashboard.html', label: '儀表板', icon: 'dash' },
@@ -103,13 +104,11 @@
   }
   function buildSidebar(isAdmin, me) {
     let nav = `<div class="nav-sect">主要功能</div>${navItems(NAV_MAIN)}`;
-    if (isAdmin) nav += `<div class="nav-sect">設定管理</div>${navItems(NAV_ADMIN)}`;
-    const user = me ? `<button class="userblock" id="appUser" title="個人資料">
-        <span class="avatar">${esc((me.name || '?').slice(0, 1))}</span>
-        <span class="uinfo"><b>${esc(me.name || '')}</b>${me.english_name ? `<small>${esc(me.english_name)}</small>` : ''}</span>
-        <span class="chev">›</span>
-      </button>` : '';
-    return `<aside class="app-sidebar" id="appSidebar">${user || '<div class="brand">開發處休假表</div>'}<nav class="app-nav">${nav}</nav></aside>`;
+    // 設定管理：所有人都看得到「個人設定」（開個人資料抽屜）；管理員另有人員管理等。
+    const settings = (me ? `<a class="navlink" id="appProfile" href="#" role="button">${ICONS.user || ''}<span>個人設定</span></a>` : '')
+      + (isAdmin ? navItems(NAV_ADMIN) : '');
+    if (settings) nav += `<div class="nav-sect">設定管理</div>${settings}`;
+    return `<aside class="app-sidebar" id="appSidebar"><div class="brand">開發處休假表</div><nav class="app-nav">${nav}</nav></aside>`;
   }
 
   // 手機底部導覽列：主要功能直達 + 「更多」開啟抽屜（含個人資料與管理項目）
@@ -136,7 +135,7 @@
     document.body.insertAdjacentHTML('beforeend',
       `<div class="pp-scrim" id="ppScrim"></div>
        <aside class="pp" id="pp"><button class="pp-close" id="ppClose" aria-label="關閉">✕</button>
-         <h2>個人資料</h2><div id="ppBody"><div class="status">載入中…</div></div></aside>`);
+         <h2>個人設定</h2><div id="ppBody"><div class="status">載入中…</div></div></aside>`);
     const close = () => { const p = document.getElementById('pp'); if (p) p.remove(); const s = document.getElementById('ppScrim'); if (s) s.remove(); };
     document.getElementById('ppScrim').onclick = close;
     document.getElementById('ppClose').onclick = close;
@@ -199,8 +198,8 @@
          </div>`;
 
     const depCard = editing
-      ? `<div class="pp-card" style="grid-column:1/-1;"><div class="k">職務代理人</div>
-           <div class="row" style="margin-top:6px;gap:8px;">
+      ? `<div class="pp-card wide"><div class="k">職務代理人</div>
+           <div class="row" style="gap:8px;">
              <select id="ppDep1" style="flex:1;">${opts(me.deputy_1, me.deputy_2)}</select>
              <select id="ppDep2" style="flex:1;">${opts(me.deputy_2, me.deputy_1)}</select>
            </div></div>`
@@ -233,7 +232,7 @@
       <h3 class="pp-sect">${year} 年度累計</h3>
       ${rows(yearStat) || '<div class="muted" style="padding:4px 2px;">今年尚無請假</div>'}
       ${yearStat.sum ? `<div class="pp-total"><span>年度合計</span><span>${yearStat.sum} 天</span></div>` : ''}
-      ${!editing ? `<div class="row" id="ppAuth" style="gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+      ${!editing ? `<div class="row" id="ppAuth" style="gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
         <button class="btn" id="ppSwitch" style="flex:1;">切換身分</button>
         <button class="btn danger" id="ppLogout" style="flex:1;">登出</button>
       </div>` : ''}`;
@@ -308,7 +307,7 @@
         <div class="bindbox">
           <div class="bindbrand">開發處休假表</div>
           <h2>請選擇你的名字</h2>
-          <p class="muted">綁定後本裝置會記住你的身分，下次免選（可在右上「個人資料」最下方切換身分或登出）。</p>
+          <p class="muted">綁定後本裝置會記住你的身分，下次免選（可在「設定管理 → 個人設定」最下方切換身分或登出）。</p>
           <div class="bindsearch">
             <input id="bindSearch" type="text" placeholder="輸入兩個字以上搜尋（中文名或英文名）…" autocomplete="off" />
             <button id="bindClear" type="button" class="bindclear" aria-label="清除" hidden>×</button>
@@ -379,8 +378,8 @@
     if (moreBtn) moreBtn.onclick = open;
     scrim.onclick = close;
     sb.querySelectorAll('a').forEach((a) => a.addEventListener('click', close));
-    const ub = document.getElementById('appUser');
-    if (ub) ub.onclick = () => { close(); openProfile(); };
+    const pf = document.getElementById('appProfile');
+    if (pf) pf.onclick = (e) => { e.preventDefault(); close(); openProfile(); };
 
     // 非管理員：移除管理專屬元素、擋掉管理頁
     if (!isAdmin) {

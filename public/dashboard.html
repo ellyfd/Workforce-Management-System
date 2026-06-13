@@ -325,7 +325,9 @@ function render(s){
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid" style="margin-bottom:12px;">
       <div class="card kpi"><div class="label">應到人數</div><div class="val">${s.expected}${s.is_non_working?'<span class="nwk">非工作日</span>':''}</div></div>
-      <div class="card kpi"><div class="label">出勤率</div><div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div></div>
+      <div class="card kpi"><div class="label">出勤率</div>${s.is_non_working
+        ? `<div class="val">${s.on_duty}<small>人出勤</small></div>`
+        : `<div class="val ok">${s.attendance_rate}%<small>${s.on_duty} 人出勤</small></div>`}</div>
       <div class="card kpi"><div class="label">請假人數</div><div class="val">${s.on_leave_count}</div></div>
       <div class="card kpi"><div class="label">假別分佈</div>${typeChips}</div>
     </div>
