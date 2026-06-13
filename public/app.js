@@ -198,8 +198,8 @@
          </div>`;
 
     const depCard = editing
-      ? `<div class="pp-card" style="grid-column:1/-1;"><div class="k">職務代理人</div>
-           <div class="row" style="margin-top:6px;gap:8px;">
+      ? `<div class="pp-card wide"><div class="k">職務代理人</div>
+           <div class="row" style="gap:8px;">
              <select id="ppDep1" style="flex:1;">${opts(me.deputy_1, me.deputy_2)}</select>
              <select id="ppDep2" style="flex:1;">${opts(me.deputy_2, me.deputy_1)}</select>
            </div></div>`
@@ -232,7 +232,7 @@
       <h3 class="pp-sect">${year} 年度累計</h3>
       ${rows(yearStat) || '<div class="muted" style="padding:4px 2px;">今年尚無請假</div>'}
       ${yearStat.sum ? `<div class="pp-total"><span>年度合計</span><span>${yearStat.sum} 天</span></div>` : ''}
-      ${!editing ? `<div class="row" id="ppAuth" style="gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+      ${!editing ? `<div class="row" id="ppAuth" style="gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
         <button class="btn" id="ppSwitch" style="flex:1;">切換身分</button>
         <button class="btn danger" id="ppLogout" style="flex:1;">登出</button>
       </div>` : ''}`;

@@ -234,19 +234,23 @@ table.data th.col .fbtn.on{ color:#fff; background:var(--blue); }
 
 .pp-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:90; }
 .pp{ position:fixed; top:0; right:0; bottom:0; width:100%; max-width:420px; background:#fff;
-  z-index:95; box-shadow:-8px 0 30px rgba(0,0,0,.15); padding:18px; overflow-y:auto; }
-.pp h2{ font-size:26px; margin:0 0 14px; font-weight:600; }
+  z-index:95; box-shadow:-8px 0 30px rgba(0,0,0,.15); padding:16px; overflow-y:auto; }
+.pp h2{ font-size:26px; margin:0 0 10px; font-weight:600; }
 .pp-close{ position:absolute; top:12px; right:14px; background:none; border:1px solid var(--border);
   border-radius:50%; width:30px; height:30px; cursor:pointer; color:var(--muted); }
-.pp-head{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
-.pp-cards{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.pp-card{ background:#f8fafc; border-radius:10px; padding:10px 12px; font-size:14px; }
-.pp-card .k{ color:var(--muted); font-size:14px; margin-bottom:3px; }
+.pp-head{ display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+/* 資訊欄位：單行（標籤左、值右），緊湊不浪費空間 */
+.pp-cards{ display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.pp-card{ display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+  background:#f8fafc; border-radius:8px; padding:6px 10px; font-size:13px; }
+.pp-card .k{ color:var(--muted); font-size:12px; flex:none; margin:0; }
+.pp-card.wide{ display:block; grid-column:1/-1; }       /* 編輯職代：標籤在上、下拉在下 */
+.pp-card.wide .k{ margin-bottom:4px; }
 /* 排休編輯模式開關（iOS 風 switch） */
-.pp-editmode{ display:flex; align-items:center; gap:12px; margin-top:10px;
-  background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer; }
+.pp-editmode{ display:flex; align-items:center; gap:12px; margin-top:8px;
+  background:#f8fafc; border:1px solid var(--border); border-radius:10px; padding:9px 12px; cursor:pointer; }
 .pp-editmode .t{ display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
-.pp-editmode .t b{ font-size:15px; }
+.pp-editmode .t b{ font-size:14px; }
 .pp-editmode .t .muted{ font-size:12px; }
 .pp-editmode input{ position:absolute; opacity:0; width:0; height:0; }
 .pp-editmode .sw{ flex:none; width:50px; height:30px; border-radius:999px; background:#d1d5db; position:relative; transition:background .18s; }
@@ -255,13 +259,13 @@ table.data th.col .fbtn.on{ color:#fff; background:var(--blue); }
 .pp-editmode input:checked + .sw{ background:var(--blue); }
 .pp-editmode input:checked + .sw::after{ transform:translateX(20px); }
 .pp-editmode input:focus-visible + .sw{ outline:2px solid var(--blue); outline-offset:2px; }
-.pp-sect{ font-size:14px; font-weight:600; margin:18px 0 6px; }
-.pp .li{ display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px;
-  background:#f8fafc; margin:6px 0; font-size:14px; }
-.pp .li .dot{ width:10px; height:10px; border-radius:50%; flex:none; }
+.pp-sect{ font-size:14px; font-weight:600; margin:12px 0 5px; }
+.pp .li{ display:flex; align-items:center; gap:8px; padding:5px 9px; border-radius:7px;
+  background:#f8fafc; margin:3px 0; font-size:13px; }
+.pp .li .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
 .pp .li .v{ margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums; }
 .pp-total{ display:flex; justify-content:space-between; border-top:1px solid var(--border);
-  padding:10px 10px 0; margin-top:8px; font-weight:600; font-size:14px; }
+  padding:7px 9px 0; margin-top:6px; font-weight:600; font-size:13px; }
 
 /* 下拉刷新指示（各頁共用；在頁面/表格頂端下拉時出現） */
 .ptr-ind{ position:fixed; left:50%; top:96px; z-index:60; display:flex; align-items:center; gap:7px;
