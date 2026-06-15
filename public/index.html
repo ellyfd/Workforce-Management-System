@@ -49,10 +49,8 @@
   .toolbar button:hover { background: #f3f4f6; }
   .toolbar .month-label { font-weight: 600; min-width: 110px; text-align: center; }
   /* 頁首所有控制項（下拉、按鈕）統一字級與字重，與標籤/勾選看起來一致 */
-  .toolbar select { font: inherit; font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: #f8fafc; padding: 4px 8px; }
+  .toolbar select { font: inherit; font-size: 14px; font-weight: 400; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: #fff; padding: 8px 10px; }
   .toolbar .today-btn { color: var(--blue); border-color: var(--blue); }
-  /* 篩選下拉（年/月/只看假別）做輕：font 維持 16px（iOS 不縮放），但縮內距＋柔和底色，視覺不搶標題 */
-  .ymsel { padding: 4px 8px; border: 1px solid var(--border); background: #f8fafc; font-weight: 400; border-radius: 8px; }
 
   .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; align-items: center; }
   .legend .item { display: inline-flex; align-items: center; gap: 5px; font-size:14px; color: #374151; }
@@ -193,6 +191,9 @@
     .page { padding: 10px 8px 4px; }
     header.top h1 { font-size: 26px; }
     .chip { font-size: 11px; }
+    /* 內容字級對齊「我的排休」行事曆（12px），切換分頁時整體外觀一致 */
+    thead th, thead th.day .wd, tbody td.name .n, tbody td.name .c,
+    tr.dept td, thead th.tot, tbody td.tot { font-size: 12px; }
     thead th.tot, tbody td.tot { min-width: 40px; width: 40px; }
 
     /* ── 頁首壓縮：把控制項擠進更少列，讓表格更早出現 ── */
