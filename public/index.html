@@ -187,14 +187,14 @@
 
   /* 手機：縮窄欄寬讓表格塞下更多日子，捲動區不被底部導覽列遮住 */
   @media (max-width: 560px) {
-    :root { --name-w: 80px; --day-w: 32px; --row-h: 36px; --head-h: 42px; }
+    :root { --name-w: 74px; --day-w: 28px; --row-h: 30px; --head-h: 36px; }
     .page { padding: 10px 8px 4px; }
     header.top h1 { font-size: 26px; }
     .chip { font-size: 11px; }
     /* 內容字級對齊「我的排休」行事曆（12px），切換分頁時整體外觀一致 */
     thead th, thead th.day .wd, tbody td.name .n, tbody td.name .c,
     tr.dept td, thead th.tot, tbody td.tot { font-size: 12px; }
-    thead th.tot, tbody td.tot { min-width: 40px; width: 40px; }
+    thead th.tot, tbody td.tot { min-width: 36px; width: 36px; }
 
     /* ── 頁首壓縮：把控制項擠進更少列，讓表格更早出現 ── */
     /* 年/月導覽列：縮小內距與間距，盡量擠在同一排（避免「全年」被擠到下一行） */
